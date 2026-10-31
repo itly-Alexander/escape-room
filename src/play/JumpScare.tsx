@@ -138,7 +138,7 @@ function playShriek(): () => void {
   }
 }
 
-export function JumpScare({ onRetry, onQuit }: { onRetry: () => void; onQuit: () => void }) {
+export function JumpScare({ onRetry, onQuit, faceSrc = faceUrl }: { onRetry: () => void; onQuit: () => void; faceSrc?: string }) {
   const [card, setCard] = useState(false)
 
   useEffect(() => {
@@ -160,7 +160,7 @@ export function JumpScare({ onRetry, onQuit }: { onRetry: () => void; onQuit: ()
       `}</style>
       <div style={{ position: 'absolute', inset: 0, animation: 'scare-shake 0.09s linear infinite' }}>
         <img
-          src={faceUrl}
+          src={faceSrc}
           alt=""
           style={{
             width: '100%', height: '100%', objectFit: 'cover',

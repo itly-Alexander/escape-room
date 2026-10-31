@@ -9,6 +9,8 @@ import { TableCloth } from './TableCloth'
 import { Lantern } from './Lantern'
 import { IronKey } from './IronKey'
 import { Puddle } from './Puddle'
+import { Doll } from './Doll'
+import { Bulb } from './Bulb'
 import { getProceduralTexture } from './textures'
 
 // World-space size (metres) covered by one tile of each named texture. The
@@ -119,6 +121,8 @@ function isFlame(mesh: MeshSchema): mesh is Extract<MeshSchema, { kind: 'flame' 
 function customMeshElement(mesh: MeshSchema) {
   if (mesh.kind === 'monster') return <Monster patrol={mesh.patrol} walkInPlace={mesh.walkInPlace} />
   if (mesh.kind === 'key') return <IronKey />
+  if (mesh.kind === 'doll') return <Doll mesh={mesh} />
+  if (mesh.kind === 'bulb') return <Bulb drop={mesh.drop} color={mesh.color} />
   if (mesh.kind === 'puddle') return <Puddle seed={mesh.seed} width={mesh.width} depth={mesh.depth} />
   if (mesh.kind === 'lantern') return <Lantern />
   if (mesh.kind === 'cloth') return <TableCloth tableSize={mesh.tableSize} side={mesh.side} spin={mesh.spin} color={mesh.color} />

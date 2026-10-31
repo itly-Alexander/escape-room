@@ -19,6 +19,7 @@ export type ProceduralTextureName =
   | 'moss'
   | 'moss-b'
   | 'moss-c'
+  | `chalk:${string}`
 
 type Symbol4 = 'sun' | 'moon' | 'eye' | 'key'
 
@@ -43,6 +44,10 @@ export function getProceduralTexture(name: ProceduralTextureName): THREE.CanvasT
 }
 
 function build(name: ProceduralTextureName): THREE.CanvasTexture {
+  if (name.startsWith('chalk:')) {
+    const [, numeral, digit] = name.split(':')
+    return buildChalkSlate(numeral ?? '', digit ?? '')
+  }
   switch (name) {
     case 'brick':
       return buildBrick()
@@ -74,6 +79,8 @@ function build(name: ProceduralTextureName): THREE.CanvasTexture {
     case 'indent-eye':
     case 'indent-key':
       return buildSeal(name.slice(7) as Symbol4, true)
+    default:
+      return buildChalkSlate('', '')
   }
 }
 
@@ -576,4 +583,75 @@ function buildBrick(): THREE.CanvasTexture {
 
   const tex = new THREE.CanvasTexture(canvas)
   return tex
+}
+
+/**
+ * A small school slate in a wooden frame with a roman numeral chalked at the
+ * top and a big digit under it, smudged and rubbed as if wiped and rewritten.
+ */
+function buildChalkSlate(numeral: string, digit: string): THREE.CanvasTexture {
+  const W = 512
+  const H = 384
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  // Frame.
+  ctx.fillStyle = '#5a3b22'
+  ctx.fillRect(0, 0, W, H)
+  for (let i = 0; i < 300; i++) {
+    ctx.fillStyle = `rgba(30,18,8,${0.05 + Math.random() * 0.12})`
+    ctx.fillRect(Math.random() * W, Math.random() * H, 10 + Math.random() * 40, 1)
+  }
+  // Slate.
+  const F = 30
+  const g = ctx.createLinearGradient(0, F, 0, H - F)
+  g.addColorStop(0, '#2c3130')
+  g.addColorStop(1, '#222726')
+  ctx.fillStyle = g
+  ctx.fillRect(F, F, W - 2 * F, H - 2 * F)
+  // Old wiped-off chalk: pale cloudy smears.
+  for (let i = 0; i < 18; i++) {
+    const x = F + Math.random() * (W - 2 * F)
+    const y = F + Math.random() * (H - 2 * F)
+    const r = 30 + Math.random() * 70
+    const sm = ctx.createRadialGradient(x, y, 0, x, y, r)
+    sm.addColorStop(0, 'rgba(220,225,220,0.07)')
+    sm.addColorStop(1, 'rgba(220,225,220,0)')
+    ctx.fillStyle = sm
+    ctx.fillRect(x - r, y - r, r * 2, r * 2)
+  }
+  // Chalk strokes: draw the text, then break it up so it looks dry and grainy.
+  const chalk = (text: string, size: number, y: number) => {
+    ctx.save()
+    ctx.font = `${size}px "IM Fell English", Georgia, serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = 'rgba(236,236,226,0.92)'
+    ctx.translate(W / 2, y)
+    ctx.rotate((Math.random() - 0.5) * 0.06)
+    ctx.fillText(text, 0, 0)
+    ctx.restore()
+  }
+  chalk(numeral, 74, F + 66)
+  // A line under the numeral.
+  ctx.strokeStyle = 'rgba(236,236,226,0.7)'
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  ctx.moveTo(W / 2 - 70, F + 110)
+  ctx.lineTo(W / 2 + 66, F + 106)
+  ctx.stroke()
+  chalk(digit, 190, H / 2 + 52)
+  // Grain: knock random flecks out of the chalk.
+  const img = ctx.getImageData(F, F, W - 2 * F, H - 2 * F)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i] > 120 && Math.random() < 0.28) {
+      d[i] = 44
+      d[i + 1] = 50
+      d[i + 2] = 48
+    }
+  }
+  ctx.putImageData(img, F, F)
+  return new THREE.CanvasTexture(canvas)
 }

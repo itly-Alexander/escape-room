@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as THREE from 'three'
 import { loadBundledLevel } from '@/engine/levelStorage'
@@ -14,6 +14,8 @@ import { HeldItem } from './HeldItem'
 import { JumpScare } from './JumpScare'
 import { PursuitDirector } from '@/engine/PursuitDirector'
 import { DevHUD } from './DevHUD'
+import { WatchOverlay } from './WatchOverlay'
+import { dollFaceDataUrl } from '@/engine/Doll'
 
 const READABLE_DECAY_MS = 3200
 
@@ -37,6 +39,15 @@ function RenderedObjects() {
       })}
     </>
   )
+}
+
+// Dev only: lets test scripts reach the camera and world state from the page.
+function DevBridge() {
+  const camera = useThree((s) => s.camera)
+  useEffect(() => {
+    ;(window as unknown as { __game?: unknown }).__game = { camera, world: useWorld }
+  }, [camera])
+  return null
 }
 
 // Hidden dev aid (F4). Overlays a bright hemisphere + ambient on top of the
@@ -205,6 +216,7 @@ export function PlayRoute() {
           onCodeRequest={setCodePrompt}
         />
         <HeldItem level={level} />
+        {import.meta.env.DEV && <DevBridge />}
       </Canvas>
       <PlayHUD
         reticle={locked ? reticle : null}
@@ -220,7 +232,15 @@ export function PlayRoute() {
           onQuit={() => navigate('/')}
         />
       )}
-      {caught && <JumpScare onRetry={retry} onQuit={() => navigate('/')} />}
+      <WatchOverlay />
+      {caught && (
+        <JumpScare
+          onRetry={retry}
+          onQuit={() => navigate('/')}
+          // Whoever caught you is who you see.
+          faceSrc={level.objects.some((o) => o.mesh.kind === 'doll' && o.mesh.role === 'hunter') ? dollFaceDataUrl() : undefined}
+        />
+      )}
       {import.meta.env.DEV && <DevHUD reticle={reticle} />}
     </div>
   )

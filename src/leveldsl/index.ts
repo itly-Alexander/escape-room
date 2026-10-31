@@ -173,8 +173,10 @@ export class LevelBuilder {
     castShadow?: boolean
     flicker?: { amount: number; speed?: number }
     id?: string
+    circuit?: boolean
   }): Light {
     return this.light({
+      circuit: opts.circuit,
       id: opts.id ?? this.uid('point'),
       type: 'point',
       position: opts.at,
@@ -342,6 +344,45 @@ export class LevelBuilder {
     }
     this.push(obj)
     return obj
+  }
+
+  /**
+   * A porcelain doll (engine/Doll.tsx). A `still` one sits where it's put
+   * holding `pose`, scaled by `scale`. The `hunter` lives in world space: she
+   * starts at `start` (x, z, yaw), wakes when `wakeFlag` is set, and finds her
+   * way about the floor inside `bounds` (x0, z0, x1, z1).
+   */
+  doll(opts: { id?: string; at?: Vec3; rotationY?: number; role: 'hunter' | 'still'; pose?: 'stand' | 'sit' | 'slump' | 'sitFloor'; scale?: number; wakeFlag?: string; start?: Vec3; bounds?: [number, number, number, number] }): SceneObject {
+    const hunter = opts.role === 'hunter'
+    const obj: SceneObject = {
+      id: opts.id ?? this.uid('doll'),
+      name: 'Doll',
+      mesh: { kind: 'doll', role: opts.role, pose: opts.pose ?? 'stand', scale: opts.scale ?? 1, wakeFlag: opts.wakeFlag, start: opts.start, bounds: opts.bounds },
+      transform: { position: hunter ? [0, 0, 0] : opts.at ?? [0, 0, 0], rotation: [0, hunter ? 0 : opts.rotationY ?? 0, 0], scale: [1, 1, 1] },
+      isSolid: false,
+      castShadow: true,
+      receiveShadow: false,
+    }
+    this.push(obj)
+    return obj
+  }
+
+  /** A bare bulb hanging `drop` metres below `at` (on the ceiling), with its light. On the house circuit. */
+  bulb(opts: { id?: string; at: Vec3; drop?: number; color?: string; intensity?: number; distance?: number; castShadow?: boolean; flicker?: { amount: number; speed?: number } }) {
+    const id = opts.id ?? this.uid('bulb')
+    const drop = opts.drop ?? 0.6
+    const color = opts.color ?? '#ffd9a0'
+    const [x, y, z] = opts.at
+    this.push({
+      id,
+      name: 'Light bulb',
+      mesh: { kind: 'bulb', drop, color },
+      transform: { position: opts.at, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      isSolid: false,
+      castShadow: false,
+      receiveShadow: false,
+    })
+    this.pointLight({ id: `${id}-light`, at: [x, y - drop - 0.14, z], color, intensity: opts.intensity ?? 5, distance: opts.distance ?? 9, castShadow: opts.castShadow, flicker: opts.flicker, circuit: true })
   }
 
   /**

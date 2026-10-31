@@ -34,6 +34,8 @@ const Material = z.object({
       'moss-b',
       'moss-c',
     ])
+    // Or a slate with a chalked numeral and digit: "chalk:<numeral>:<digit>".
+    .or(z.custom<`chalk:${string}`>((v) => typeof v === 'string' && v.startsWith('chalk:')))
     .optional(),
 })
 
@@ -95,7 +97,23 @@ const LanternMesh = z.object({ kind: z.literal('lantern') })
 const KeyMesh = z.object({ kind: z.literal('key') })
 const PuddleMesh = z.object({ kind: z.literal('puddle'), seed: z.number(), width: z.number().positive(), depth: z.number().positive() })
 
-const Mesh = z.discriminatedUnion('kind', [PrimitiveMesh, GltfMesh, FlameMesh, MonsterMesh, ClothMesh, LanternMesh, KeyMesh, PuddleMesh])
+// The porcelain doll (engine/Doll.tsx). A `hunter` is the one that moves when
+// unseen, waking once `wakeFlag` is set; a `still` one is set dressing that holds
+// `pose` forever. `start` is where the hunter begins (world x, z and yaw) and
+// `bounds` (x0, z0, x1, z1) is the floor she finds her way across.
+const DollMesh = z.object({
+  kind: z.literal('doll'),
+  role: z.enum(['hunter', 'still']),
+  pose: z.enum(['stand', 'sit', 'slump', 'sitFloor']).default('stand'),
+  scale: z.number().positive().default(1),
+  wakeFlag: z.string().optional(),
+  start: z.tuple([z.number(), z.number(), z.number()]).optional(),
+  bounds: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+})
+// A bare bulb hanging on its flex. On the house circuit, it dies with the lights.
+const BulbMesh = z.object({ kind: z.literal('bulb'), drop: z.number().positive().default(0.6), color: Color.default('#ffd9a0') })
+
+const Mesh = z.discriminatedUnion('kind', [PrimitiveMesh, GltfMesh, FlameMesh, MonsterMesh, ClothMesh, LanternMesh, KeyMesh, PuddleMesh, DollMesh, BulbMesh])
 
 const Transform = z.object({
   position: Vec3.default([0, 0, 0]),
@@ -215,6 +233,8 @@ const Light = z.object({
   penumbra: z.number().optional(),
   distance: z.number().optional(),
   flicker: LightFlicker.optional(),
+  // On the house circuit: dims and dies with the power (engine/watch.ts).
+  circuit: z.boolean().optional(),
 })
 
 // When every flag in `whenAll` is set, set `set` too (and say `message`).

@@ -2,6 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Light } from '@/schema/level'
+import { watch } from './watch'
 
 // Forward-rendered lights are paid for per pixel, and each shadow-casting point
 // light also needs a texture unit. A big level can have dozens of point lights,
@@ -90,7 +91,7 @@ function PointLightPool({ lights }: { lights: Light[] }) {
         s.v += (s.target - s.v) * Math.min(1, dt * 12)
         intensity = l.intensity * s.v * (1 + Math.sin(s.t * speed * 1.3) * l.flicker.amount * 0.15)
       }
-      slot.intensity = intensity
+      slot.intensity = l.circuit ? intensity * watch.power : intensity
     }
   }
 
@@ -130,7 +131,13 @@ function LightOne({ light }: { light: Light }) {
   const flickerState = useRef({ v: 1, target: 1, t: Math.random() * 10 })
 
   useFrame((_, dt) => {
-    if (!light.flicker || !lightRef.current) return
+    if (!lightRef.current) return
+    // On the house circuit it follows the power, flickering or not.
+    const power = light.circuit ? watch.power : 1
+    if (!light.flicker) {
+      if (light.circuit) lightRef.current.intensity = light.intensity * power
+      return
+    }
     const s = flickerState.current
     s.t += dt
     const speed = light.flicker.speed
@@ -139,7 +146,7 @@ function LightOne({ light }: { light: Light }) {
     }
     s.v += (s.target - s.v) * Math.min(1, dt * 12)
     const flutter = 1 + Math.sin(s.t * speed * 1.3) * light.flicker.amount * 0.15
-    lightRef.current.intensity = light.intensity * s.v * flutter
+    lightRef.current.intensity = light.intensity * s.v * flutter * power
   })
 
   switch (light.type) {
