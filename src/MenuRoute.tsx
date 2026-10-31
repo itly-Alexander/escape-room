@@ -54,15 +54,18 @@ export function MenuRoute() {
           <ul style={listStyle}>
             {levels.map((l) => (
               <li key={l.id} style={itemStyle}>
-                <span style={itemNameStyle}>{l.name}</span>
-                <span style={coomingSoonStyle}>
-                  {l.id == "level-secret" && "Coming Soon"}
-                </span>
+                <div style={itemInfoStyle}>
+                  <span style={itemNameStyle}>{l.name}</span>
+                  <div style={tagRowStyle}>
+                    {l.tags.map((t) => (
+                      <span key={t} style={tagStyle}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
                 <Link
-                  style={{
-                    ...linkBtn,
-                    pointerEvents: l.id == "level-secret" ? "none" : "inherit",
-                  }}
+                  style={linkBtn}
                   to={`/play/${l.id}`}
                   onClick={startAudio}
                 >
@@ -107,7 +110,6 @@ const contentStyle: React.CSSProperties = {
   flexDirection: "column",
   alignItems: "center",
   paddingTop: "7vh",
-  pointerEvents: "none",
 };
 const titleStyle: React.CSSProperties = {
   fontFamily: '"Cinzel Decorative", serif',
@@ -130,7 +132,6 @@ const subtitleStyle: React.CSSProperties = {
 };
 const scrollStyle: React.CSSProperties = {
   marginTop: 48,
-  pointerEvents: "auto",
   minWidth: 420,
   maxWidth: 520,
   padding: "28px 36px 32px",
@@ -168,18 +169,32 @@ const itemStyle: React.CSSProperties = {
   border: "1px solid rgba(120, 85, 50, 0.3)",
   borderRadius: 4,
 };
-const itemNameStyle: React.CSSProperties = {
+const itemInfoStyle: React.CSSProperties = {
   flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+};
+const tagRowStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 6,
+};
+const tagStyle: React.CSSProperties = {
+  fontFamily: '"Cinzel", serif',
+  fontSize: 10,
+  textTransform: "uppercase",
+  letterSpacing: 2,
+  color: "#c9a76a",
+  padding: "2px 8px",
+  border: "1px solid rgba(120, 85, 50, 0.5)",
+  borderRadius: 2,
+  background: "rgba(0, 0, 0, 0.3)",
+};
+const itemNameStyle: React.CSSProperties = {
   fontFamily: '"Cinzel", serif',
   fontSize: 16,
   color: "#ead6a8",
-  letterSpacing: 1,
-};
-const coomingSoonStyle: React.CSSProperties = {
-  flex: 1,
-  fontFamily: '"Cinzel", serif',
-  fontSize: 16,
-  color: "red",
   letterSpacing: 1,
 };
 const linkBtn: React.CSSProperties = {

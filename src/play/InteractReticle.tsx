@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Level, SceneObject } from '@/schema/level'
 import { tryInteract } from '@/engine/interact'
+import { sfx } from '@/engine/ambient'
 import { useWorld } from '@/state/world'
 
 const MAX_INTERACT_DIST = 2.6
@@ -28,7 +29,8 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
   const [, force] = useState(0)
 
   useFrame(() => {
-    if (!enabled) {
+    // Nothing to aim at while crawling in, hiding or crawling out.
+    if (!enabled || useWorld.getState().hide) {
       if (currentRef.current) {
         currentRef.current = null
         onTargetChange(null)
@@ -48,7 +50,9 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
       // Closest scene object wins. If it has no interact, physical occlusion
       // prevents reaching anything behind it (e.g. a closed chest lid hiding
       // a key inside).
-      if (obj.interact) {
+      const b = obj.interact?.behavior
+      const overturned = b?.type === 'hide' && !!b.group && !!useWorld.getState().flags[`flip-${b.group}`]
+      if (obj.interact && !overturned) {
         found = { object: obj, prompt: promptFor(obj), distance: hit.distance }
       }
       break
@@ -67,10 +71,27 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!enabled) return
       if (e.code !== 'KeyE' && e.code !== 'Space') return
+      // While hiding, E crawls back out (and does nothing mid-crawl).
+      const w = useWorld.getState()
+      if (w.hide) {
+        if (w.hide.phase === 'hidden') {
+          w.setHidePhase('leaving')
+        }
+        return
+      }
+      if (!enabled) return
       const target = currentRef.current
-      if (!target) return
+      if (!target) {
+        // Nothing in reach: E reads (or puts away) the letter in your hand.
+        const held = heldReadable(level)
+        if (held) {
+          const cur = useWorld.getState().activeReadable
+          useWorld.getState().setActiveReadable(cur?.persistent ? null : held)
+          sfx.play('read')
+        }
+        return
+      }
       const r = tryInteract(target.object)
       if (r.kind === 'locked') {
         if (r.needsCode) onCodeRequest(target.object.id)
@@ -81,6 +102,19 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
     return () => window.removeEventListener('keydown', onKey)
   }, [enabled, onCodeRequest])
 
+  return null
+}
+
+/** The text of the selected inventory item, if it's something you can read. */
+export function heldReadable(level: Level | null) {
+  const w = useWorld.getState()
+  if (!level || !w.selectedItem || !w.inventory.includes(w.selectedItem)) return null
+  for (const o of level.objects) {
+    const b = o.interact?.behavior
+    if (b?.type === 'pickup' && b.itemId === w.selectedItem && b.readText) {
+      return { objectId: `held:${b.itemId}`, text: b.readText, handwritten: b.handwritten, persistent: true }
+    }
+  }
   return null
 }
 
@@ -103,9 +137,19 @@ function promptFor(obj: SceneObject): string {
     case 'readable':
       return 'Read'
     case 'exit':
-      return 'Escape'
-    case 'toggleState':
-    case 'setState':
+      return obj.interact?.lock?.requires.kind === 'code' ? 'Enter the code' : 'Escape'
+    case 'hide':
+      return 'Hide under the table'
+    case 'combine':
+      return b.prompt ?? 'Use'
+    case 'toggleState': {
+      if (b.label) {
+        const open = obj.pose ? !!useWorld.getState().flags[obj.pose.stateId] : !!useWorld.getState().flags[b.stateId]
+        return `${open ? 'Close' : 'Open'} the ${b.label}`
+      }
       return obj.interact?.lock ? 'Use' : 'Toggle'
+    }
+    case 'setState':
+      return b.prompt ?? (obj.interact?.lock ? 'Use' : 'Toggle')
   }
 }

@@ -1,9 +1,21 @@
 import { create } from 'zustand'
 import type { Level } from '@/schema/level'
+import { sfx } from '@/engine/ambient'
 
 export type HudMessage = { id: number; text: string; expiresAt: number }
 
-export type ActiveReadable = { objectId: string; text: string }
+export type ActiveReadable = {
+  objectId: string
+  text: string
+  handwritten?: boolean
+  // Stays up until closed (a letter you're holding), rather than fading when you look away.
+  persistent?: boolean
+}
+
+type P3 = [number, number, number]
+export type HideSpot = { edge: P3; deep: P3; spot: P3; exit: P3; outYaw: number; group?: string; approach?: P3 }
+/** The player crawling into / sitting in / crawling out of a hiding place. */
+export type HideState = { phase: 'entering' | 'hidden' | 'leaving'; spot: HideSpot }
 
 type WorldState = {
   level: Level | null
@@ -15,8 +27,15 @@ type WorldState = {
   paused: boolean
   hud: HudMessage[]
   activeReadable: ActiveReadable | null
+  hide: HideState | null
   debugFullbright: boolean
+  /** The monster has got the player: game over. */
+  caught: boolean
 
+  setCaught: (caught: boolean) => void
+  startHide: (spot: HideSpot) => void
+  setHidePhase: (phase: HideState['phase']) => void
+  endHide: () => void
   loadLevel: (level: Level) => void
   setFlag: (id: string, value: boolean) => void
   toggleFlag: (id: string) => void
@@ -35,6 +54,19 @@ type WorldState = {
 
 let hudSeq = 1
 
+/** Level rules: once all of a rule's flags are set, its own flag is set too. */
+function applyRules() {
+  const { level } = useWorld.getState()
+  if (!level) return
+  for (const rule of level.rules) {
+    const { flags } = useWorld.getState()
+    if (flags[rule.set] || !rule.whenAll.every((f) => flags[f])) continue
+    useWorld.setState({ flags: { ...flags, [rule.set]: true } })
+    if (rule.message) useWorld.getState().pushHud(rule.message, 9000)
+    sfx.play('open')
+  }
+}
+
 export const useWorld = create<WorldState>((set, get) => ({
   level: null,
   flags: {},
@@ -45,7 +77,14 @@ export const useWorld = create<WorldState>((set, get) => ({
   paused: false,
   hud: [],
   activeReadable: null,
+  hide: null,
   debugFullbright: false,
+  caught: false,
+
+  setCaught: (caught) => set({ caught }),
+  startHide: (spot) => set((s) => (s.hide ? s : { hide: { phase: 'entering', spot } })),
+  setHidePhase: (phase) => set((s) => (s.hide ? { hide: { ...s.hide, phase } } : s)),
+  endHide: () => set({ hide: null }),
 
   loadLevel: (level) =>
     set({
@@ -58,10 +97,18 @@ export const useWorld = create<WorldState>((set, get) => ({
       paused: false,
       hud: [],
       activeReadable: null,
+      hide: null,
+      caught: false,
     }),
 
-  setFlag: (id, value) => set((s) => ({ flags: { ...s.flags, [id]: value } })),
-  toggleFlag: (id) => set((s) => ({ flags: { ...s.flags, [id]: !s.flags[id] } })),
+  setFlag: (id, value) => {
+    set((s) => ({ flags: { ...s.flags, [id]: value } }))
+    applyRules()
+  },
+  toggleFlag: (id) => {
+    set((s) => ({ flags: { ...s.flags, [id]: !s.flags[id] } }))
+    applyRules()
+  },
 
   addItem: (itemId) =>
     set((s) => (s.inventory.includes(itemId) ? s : { inventory: [...s.inventory, itemId] })),
@@ -70,7 +117,8 @@ export const useWorld = create<WorldState>((set, get) => ({
       inventory: s.inventory.filter((i) => i !== itemId),
       selectedItem: s.selectedItem === itemId ? null : s.selectedItem,
     })),
-  selectItem: (itemId) => set({ selectedItem: itemId }),
+  // Putting a letter away closes it.
+  selectItem: (itemId) => set((s) => ({ selectedItem: itemId, activeReadable: s.activeReadable?.persistent ? null : s.activeReadable })),
   markPickedUp: (objectId) =>
     set((s) => {
       if (s.pickedUpObjectIds.has(objectId)) return s
@@ -104,5 +152,7 @@ export const useWorld = create<WorldState>((set, get) => ({
       paused: false,
       hud: [],
       activeReadable: null,
+      hide: null,
+      caught: false,
     }),
 }))

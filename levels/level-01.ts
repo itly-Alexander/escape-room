@@ -3,6 +3,7 @@ import { defineLevel } from "@/leveldsl";
 export default defineLevel({
   id: "level-01",
   name: "Level 01 — The One You Test",
+  tags: ["easy", "puzzle"],
   background: "#07050a",
   playerStart: { position: [0, 1.7, 3] },
   build(L) {
@@ -10,7 +11,7 @@ export default defineLevel({
       size: [8, 3, 8],
       floor: "#2e2822",
       ceiling: "#1a1612",
-      walls: "#3a3228",
+      walls: "#ffffff",
     });
     L.ambient({ color: "#5a6a80", intensity: 0.1 });
 

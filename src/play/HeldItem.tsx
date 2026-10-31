@@ -19,6 +19,8 @@ export function HeldItem({ level }: { level: Level }) {
   const inventory = useWorld((s) => s.inventory)
   const { camera } = useThree()
   const groupRef = useRef<THREE.Group>(null)
+  const lightRef = useRef<THREE.PointLight>(null)
+  const flame = useRef({ v: 1, target: 1 })
 
   // What is actually rendered right now (lags selectedItem through the stow animation).
   const [displayed, setDisplayed] = useState<string | null>(null)
@@ -103,17 +105,46 @@ export function HeldItem({ level }: { level: Level }) {
     g.rotateY(-0.1)
 
     // Scale with swap so it also eases in visually.
-    // Base 2.5× so small source meshes (e.g. 8cm key) are legible in hand.
-    const s = 2.5 * (0.4 + swap * 0.6)
+    // Base 2.5× so small source meshes (e.g. 8cm key) are legible in hand; a
+    // lantern is already full size, and is held by its handle, so lower it.
+    const isLantern = sourceObj?.mesh.kind === 'lantern'
+    // A flat sheet (a letter) is held up facing you, and not blown up as far.
+    const disc = sourceObj?.mesh.kind === 'primitive' && sourceObj.mesh.shape === 'cylinder' && sourceObj.mesh.size[1] < 0.05
+    const flat = disc || (sourceObj?.mesh.kind === 'primitive' && sourceObj.mesh.shape === 'box' && sourceObj.mesh.size[1] < 0.02)
+    if (flat) g.rotateX(Math.PI / 2 - 0.15)
+    const s = (isLantern ? 0.95 : disc ? 1.7 : flat ? 1.2 : 2.5) * (0.4 + swap * 0.6)
     g.scale.setScalar(s)
+    if (isLantern) g.position.addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion), 0.04 * swap)
   })
 
-  if (!sourceObj) return null
+  // A lantern in hand lights the way. The light is always mounted (just dark
+  // when nothing is held) so switching it on never recompiles the scene's shaders.
+  useFrame((_, dt) => {
+    const light = lightRef.current
+    if (!light) return
+    const g = groupRef.current
+    const held = sourceObj?.mesh.kind === 'lantern' && g
+    if (held) {
+      const f = flame.current
+      if (Math.random() < dt * 9) f.target = 0.85 + Math.random() * 0.3
+      f.v += (f.target - f.v) * Math.min(1, dt * 12)
+      const up = new THREE.Vector3(0, 0.16, 0).applyQuaternion(camera.quaternion)
+      light.position.copy(g.position).add(up)
+      light.intensity = 8 * f.v * easeOutCubic(swapRef.current)
+    } else {
+      light.intensity = 0
+    }
+  })
 
   return (
-    <group ref={groupRef}>
-      <MeshBody mesh={sourceObj.mesh} castShadow={false} receiveShadow={false} />
-    </group>
+    <>
+      <pointLight ref={lightRef} color="#ffb066" intensity={0} distance={18} decay={2} />
+      {sourceObj && (
+        <group ref={groupRef}>
+          <MeshBody mesh={sourceObj.mesh} castShadow={false} receiveShadow={false} />
+        </group>
+      )}
+    </>
   )
 }
 

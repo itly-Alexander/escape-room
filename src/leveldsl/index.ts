@@ -26,6 +26,7 @@ export type LevelMeta = {
   id: string
   name: string
   background?: string
+  tags?: string[]
   playerStart: { position: Vec3; rotationY?: number }
   build: (L: LevelBuilder) => void
 }
@@ -33,6 +34,7 @@ export type LevelMeta = {
 export class LevelBuilder {
   readonly objects: SceneObject[] = []
   readonly lights: Light[] = []
+  readonly rules: Array<{ whenAll: string[]; set: string; message?: string }> = []
   private readonly ids = new Set<string>()
   private _exitId: string | null = null
   private counters = new Map<string, number>()
@@ -83,13 +85,16 @@ export class LevelBuilder {
     metalness?: number
     emissive?: string
     emissiveIntensity?: number
-    texture?: 'brick'
+    texture?: NonNullable<Material['texture']>
+    cutout?: boolean
     rotationY?: number
     isSolid?: boolean
     castShadow?: boolean
     receiveShadow?: boolean
     pose?: Pose
     interact?: Interact
+    /** Not in the world until this state flag is set. */
+    appearsWhen?: string
   }): SceneObject {
     return this.primitive('box', opts)
   }
@@ -114,6 +119,7 @@ export class LevelBuilder {
       emissive: opts.emissive,
       emissiveIntensity: opts.emissiveIntensity ?? 1,
       texture: opts.texture,
+      cutout: opts.cutout,
     }
     const mesh: Mesh = { kind: 'primitive', shape, size: opts.size, material: mat }
     const obj: SceneObject = {
@@ -130,9 +136,15 @@ export class LevelBuilder {
       receiveShadow: opts.receiveShadow ?? true,
       pose: opts.pose,
       interact: opts.interact,
+      appearsWhen: opts.appearsWhen,
     }
     this.push(obj)
     return obj
+  }
+
+  /** When every flag in `whenAll` is set, set `set` too, and say `message`. */
+  rule(r: { whenAll: string[]; set: string; message?: string }) {
+    this.rules.push(r)
   }
 
   light(spec: Light): Light {
@@ -190,12 +202,13 @@ export class LevelBuilder {
   }) {
     const [w, h, d] = opts.size
     const t = opts.wallThickness ?? 0.2
+    const brick = { texture: 'brick' as const }
     this.box({ id: 'floor', name: 'Floor', at: [0, -0.05, 0], size: [w, 0.1, d], color: opts.floor, roughness: 1, isSolid: true, castShadow: false })
     this.box({ id: 'ceiling', name: 'Ceiling', at: [0, h + 0.05, 0], size: [w, 0.1, d], color: opts.ceiling, roughness: 1, castShadow: false })
-    this.box({ id: 'wall-north', name: 'Wall (N)', at: [0, h / 2, -d / 2], size: [w, h, t], color: opts.walls, roughness: 0.95, isSolid: true, castShadow: false })
-    this.box({ id: 'wall-south', name: 'Wall (S)', at: [0, h / 2, d / 2], size: [w, h, t], color: opts.walls, roughness: 0.95, isSolid: true, castShadow: false })
-    this.box({ id: 'wall-east', name: 'Wall (E)', at: [w / 2, h / 2, 0], size: [t, h, d], color: opts.walls, roughness: 0.95, isSolid: true, castShadow: false })
-    this.box({ id: 'wall-west', name: 'Wall (W)', at: [-w / 2, h / 2, 0], size: [t, h, d], color: opts.walls, roughness: 0.95, isSolid: true, castShadow: false })
+    this.box({ id: 'wall-north', name: 'Wall (N)', at: [0, h / 2, -d / 2], size: [w, h, t], color: opts.walls, roughness: 1, ...brick, isSolid: true, castShadow: false })
+    this.box({ id: 'wall-south', name: 'Wall (S)', at: [0, h / 2, d / 2], size: [w, h, t], color: opts.walls, roughness: 1, ...brick, isSolid: true, castShadow: false })
+    this.box({ id: 'wall-east', name: 'Wall (E)', at: [w / 2, h / 2, 0], size: [t, h, d], color: opts.walls, roughness: 1, ...brick, isSolid: true, castShadow: false })
+    this.box({ id: 'wall-west', name: 'Wall (W)', at: [-w / 2, h / 2, 0], size: [t, h, d], color: opts.walls, roughness: 1, ...brick, isSolid: true, castShadow: false })
   }
 
   /**
@@ -219,6 +232,8 @@ export class LevelBuilder {
     wallColor?: string
     floorColor?: string
     ceilingColor?: string
+    /** World x/z of the middle of the maze (default the origin). */
+    center?: [number, number]
   }): { cellCenter: (row: number, col: number) => Vec3; cellSize: number; rows: number; cols: number } {
     const grid = opts.grid
     const rows = grid.length
@@ -235,16 +250,17 @@ export class LevelBuilder {
 
     const extentX = cols * cs
     const extentZ = rows * cs
+    const [cx0, cz0] = opts.center ?? [0, 0]
 
     // Roughness kept well below 1 so stone catches a mild specular glint from
     // sconces — fully matte surfaces at these dark base colors absorb almost
     // everything the lights throw at them and the maze reads as pitch black.
-    this.box({ id: this.uid('maze-floor'), name: 'Maze floor', at: [0, -0.05, 0], size: [extentX, 0.1, extentZ], color: floorColor, roughness: 0.82, isSolid: true, castShadow: false })
-    this.box({ id: this.uid('maze-ceiling'), name: 'Maze ceiling', at: [0, h + 0.05, 0], size: [extentX, 0.1, extentZ], color: ceilingColor, roughness: 0.9, castShadow: false })
+    this.box({ id: this.uid('maze-floor'), name: 'Maze floor', at: [cx0, -0.05, cz0], size: [extentX, 0.1, extentZ], color: floorColor, roughness: 0.82, isSolid: true, castShadow: false })
+    this.box({ id: this.uid('maze-ceiling'), name: 'Maze ceiling', at: [cx0, h + 0.05, cz0], size: [extentX, 0.1, extentZ], color: ceilingColor, roughness: 0.9, castShadow: false })
 
     const cellCenter = (row: number, col: number): Vec3 => {
-      const x = -extentX / 2 + col * cs + cs / 2
-      const z = -extentZ / 2 + row * cs + cs / 2
+      const x = cx0 - extentX / 2 + col * cs + cs / 2
+      const z = cz0 - extentZ / 2 + row * cs + cs / 2
       return [x, 0, z]
     }
 
@@ -258,7 +274,7 @@ export class LevelBuilder {
           at: [x, h / 2, z],
           size: [cs, h, cs],
           color: wallColor,
-          roughness: 0.78,
+          roughness: 1,
           texture: 'brick',
           isSolid: true,
           castShadow: true,
@@ -285,7 +301,7 @@ export class LevelBuilder {
     id?: string
   }) {
     const id = opts.id ?? this.uid('sconce')
-    const color = opts.color ?? '#ffa258'
+    const color = opts.color ?? '#ffb36b'
     const [x, y, z] = opts.at
     const toWall = { north: [0, 0, -0.2], south: [0, 0, 0.2], east: [0.2, 0, 0], west: [-0.2, 0, 0] }[opts.side] as Vec3
     const bracketAt: Vec3 = [x + toWall[0], y - 0.1, z + toWall[2]]
@@ -294,11 +310,56 @@ export class LevelBuilder {
     this.cylinder({ id: `${id}-bracket`, name: 'Sconce bracket', at: bracketAt, size: [0.08, 0.3, 0.08], color: '#1a1612', metalness: 0.5, roughness: 0.8, rotationY: bracketRot })
     this.cylinder({ id: `${id}-bowl`, name: 'Sconce bowl', at: [x, y - 0.05, z], size: [0.22, 0.1, 0.22], color: '#2a2018', roughness: 0.6, metalness: 0.7 })
     this.flame({ id: `${id}-flame`, name: 'Sconce flame', at: [x, y + 0.02, z], size: 0.14 })
-    this.pointLight({ id: `${id}-light`, at: [x, y + 0.1, z], color, intensity: opts.intensity ?? 8.5, distance: opts.distance ?? 8, castShadow: opts.castShadow ?? true, flicker: { amount: 0.35, speed: 9 } })
+    this.pointLight({ id: `${id}-light`, at: [x, y + 0.1, z], color, intensity: opts.intensity ?? 6.5, distance: opts.distance ?? 8, castShadow: opts.castShadow ?? true, flicker: { amount: 0.35, speed: 9 } })
+  }
+
+  /** A puddle on the floor with its own irregular outline (engine/Puddle.tsx). `at` is on the floor. */
+  puddle(opts: { id: string; at: Vec3; seed: number; width: number; depth: number }): SceneObject {
+    const obj: SceneObject = {
+      id: opts.id,
+      name: 'Pool of water',
+      mesh: { kind: 'puddle', seed: opts.seed, width: opts.width, depth: opts.depth },
+      transform: { position: opts.at, rotation: [0, 0, 0], scale: [1, 1, 1] },
+      isSolid: false,
+      castShadow: false,
+      receiveShadow: false,
+    }
+    this.push(obj)
+    return obj
+  }
+
+  /** The pale, black-haired woman (see engine/Monster.tsx). Not solid yet. */
+  monster(opts: { id?: string; name?: string; at: Vec3; rotationY?: number; appearsWhen?: string; walkInPlace?: boolean; patrol?: { points: Array<[number, number]>; speed?: number; stops?: number[]; nav?: NonNullable<NonNullable<Extract<Mesh, { kind: 'monster' }>['patrol']>['nav']> } }): SceneObject {
+    const obj: SceneObject = {
+      id: opts.id ?? this.uid('monster'),
+      name: opts.name ?? 'Monster',
+      mesh: { kind: 'monster', walkInPlace: opts.walkInPlace, patrol: opts.patrol && { points: opts.patrol.points, speed: opts.patrol.speed ?? 1.1, stops: opts.patrol.stops ?? [], nav: opts.patrol.nav } },
+      transform: { position: opts.at, rotation: [0, opts.rotationY ?? 0, 0], scale: [1, 1, 1] },
+      isSolid: false,
+      castShadow: true,
+      receiveShadow: false,
+      appearsWhen: opts.appearsWhen,
+    }
+    this.push(obj)
+    return obj
+  }
+
+  /**
+   * A stub of a candle: wax, a tiny flame and a dim, flickering warm light.
+   * `at` is the base of the candle (e.g. a tabletop). The light casts no
+   * shadows, so it doesn't cost a shadow-map texture unit.
+   */
+  candle(opts: { id?: string; at: Vec3; height?: number; intensity?: number; distance?: number; interact?: Interact }) {
+    const id = opts.id ?? this.uid('candle')
+    const h = opts.height ?? 0.14
+    const [x, y, z] = opts.at
+    this.cylinder({ id: `${id}-wax`, name: 'Candle', at: [x, y + h / 2, z], size: [0.05, h, 0.05], color: '#cfc3a4', roughness: 0.9, castShadow: false, interact: opts.interact })
+    this.flame({ id: `${id}-flame`, name: 'Candle flame', at: [x, y + h + 0.025, z], size: 0.03, interact: opts.interact })
+    this.pointLight({ id: `${id}-light`, at: [x, y + h + 0.08, z], color: '#ffb36b', intensity: opts.intensity ?? 1.1, distance: opts.distance ?? 6, castShadow: false, flicker: { amount: 0.35, speed: 11 } })
   }
 
   /** Emissive layered-cone flame. Not solid; doesn't block rays. */
-  flame(opts: { id: string; name?: string; at: Vec3; size?: number; seed?: number }): SceneObject {
+  flame(opts: { id: string; name?: string; at: Vec3; size?: number; seed?: number; interact?: Interact }): SceneObject {
     const obj: SceneObject = {
       id: opts.id,
       name: opts.name ?? 'Flame',
@@ -307,6 +368,7 @@ export class LevelBuilder {
       isSolid: false,
       castShadow: false,
       receiveShadow: false,
+      interact: opts.interact,
     }
     this.push(obj)
     return obj
@@ -351,9 +413,31 @@ export class LevelBuilder {
     itemId: string
     label: string
     icon?: string
-    mesh: 'key' | { shape: PrimitiveShape; size: Vec3; color: string; metalness?: number; roughness?: number; emissive?: string; emissiveIntensity?: number }
+    mesh: 'key' | 'iron-key' | 'lantern' | { shape: PrimitiveShape; size: Vec3; color: string; metalness?: number; roughness?: number; emissive?: string; emissiveIntensity?: number; texture?: NonNullable<Material['texture']> }
     rotationY?: number
+    /** Text shown on pickup, and again when the item is selected and E is pressed. */
+    readText?: string
+    handwritten?: boolean
+    appearsWhen?: string
+    pose?: Pose
   }): SceneObject {
+    if (opts.mesh === 'lantern' || opts.mesh === 'iron-key') {
+      // A hand lantern (engine/Lantern.tsx). Held in the hand it also gives light.
+      const obj: SceneObject = {
+        id: opts.id,
+        name: opts.label,
+        mesh: { kind: opts.mesh === 'lantern' ? 'lantern' : 'key' },
+        transform: { position: opts.at, rotation: [0, opts.rotationY ?? 0, 0], scale: [1, 1, 1] },
+        isSolid: false,
+        castShadow: true,
+        receiveShadow: false,
+        appearsWhen: opts.appearsWhen,
+        pose: opts.pose,
+        interact: { behavior: { type: 'pickup', itemId: opts.itemId, label: opts.label, icon: opts.icon } },
+      }
+      this.push(obj)
+      return obj
+    }
     const mesh = opts.mesh === 'key'
       ? { shape: 'cylinder' as const, size: [0.08, 0.02, 0.08] as Vec3, color: '#d4a042', metalness: 0.8, roughness: 0.3, emissive: '#f3c766', emissiveIntensity: 0.4 }
       : opts.mesh
@@ -367,12 +451,100 @@ export class LevelBuilder {
       metalness: mesh.metalness ?? 0,
       emissive: mesh.emissive,
       emissiveIntensity: mesh.emissiveIntensity,
+      texture: 'texture' in mesh ? mesh.texture : undefined,
       rotationY: opts.rotationY,
       castShadow: true,
+      appearsWhen: opts.appearsWhen,
+      pose: opts.pose,
       interact: {
-        behavior: { type: 'pickup', itemId: opts.itemId, label: opts.label, icon: opts.icon },
+        behavior: { type: 'pickup', itemId: opts.itemId, label: opts.label, icon: opts.icon, readText: opts.readText, handwritten: opts.handwritten },
       },
     })
+  }
+
+  /**
+   * A plain wooden door in a doorway whose width runs along z (so the leaf is a
+   * thin slab facing east/west). E opens and closes it; while open it stops
+   * blocking the player. `hinge` is the side it's hinged on, and `swing`
+   * (1 or -1) picks which way it opens — try the other if it swings into the
+   * wrong room. `at` is the bottom-centre of the closed leaf.
+   */
+  door(opts: {
+    id?: string
+    at: Vec3
+    width?: number
+    height?: number
+    hinge: 'north' | 'south'
+    swing: 1 | -1
+    stateId?: string
+    color?: string
+    panelColor?: string
+    label?: string
+    /** Won't open until the player is carrying this item (selected or not). */
+    requiresItem?: string
+    lockedMessage?: string
+  }) {
+    const id = opts.id ?? this.uid('door')
+    const w = opts.width ?? 1.9
+    const h = opts.height ?? 2.4
+    const t = 0.1
+    const stateId = opts.stateId ?? `${id}-open`
+    const [x, y, z] = opts.at
+    const hs = opts.hinge === 'north' ? -1 : 1
+    const hingeZ = z + hs * (w / 2)
+    const theta = opts.swing * (Math.PI / 2)
+    const c = Math.cos(theta)
+    const sn = Math.sin(theta)
+    const interact: Interact = {
+      behavior: { type: 'toggleState', stateId, label: opts.label ?? 'door' },
+      lock: opts.requiresItem
+        ? {
+            requires: { kind: 'item', itemId: opts.requiresItem, held: false },
+            lockedMessage: opts.lockedMessage,
+            consumeItem: false,
+          }
+        : undefined,
+    }
+    const leafColor = opts.color ?? '#4a2f1c'
+    const panelColor = opts.panelColor ?? '#3b2415'
+
+    // Where a part of the door ends up when the leaf has swung about its hinge.
+    const poseFor = (cx: number, cy: number, cz: number, solid: boolean): Pose => {
+      const vz = cz - hingeZ
+      const vx = cx - x
+      return {
+        stateId,
+        open: { position: [x + vx * c + vz * sn, cy, hingeZ - vx * sn + vz * c], rotation: [0, theta, 0] },
+        duration: 0.9,
+        unblocksWhenOpen: solid,
+      }
+    }
+    const part = (key: string, dx: number, dy: number, dz: number, size: Vec3, color: string, solid: boolean, metal = false) => {
+      const cx = x + dx
+      const cy = y + h / 2 + dy
+      const cz = z + dz
+      this.box({
+        id: `${id}-${key}`,
+        name: opts.label ?? 'Door',
+        at: [cx, cy, cz],
+        size,
+        color,
+        roughness: metal ? 0.3 : 0.75,
+        metalness: metal ? 0.85 : 0,
+        isSolid: solid,
+        castShadow: false,
+        pose: poseFor(cx, cy, cz, solid),
+        interact,
+      })
+    }
+    part('leaf', 0, 0, 0, [t, h, w], leafColor, true)
+    // Raised panels on both faces.
+    part('panel-top', 0, 0.5, 0, [t + 0.03, 0.85, w - 0.5], panelColor, false)
+    part('panel-bottom', 0, -0.55, 0, [t + 0.03, 0.85, w - 0.5], panelColor, false)
+    // A brass knob on each face, on the side away from the hinge.
+    const knobZ = -hs * (w / 2 - 0.16)
+    for (const side of [-1, 1]) part(`knob${side}`, side * (t / 2 + 0.05), -0.05, knobZ, [0.09, 0.09, 0.09], '#c9a14a', false, true)
+    return { stateId }
   }
 
   /**
@@ -431,6 +603,7 @@ export class LevelBuilder {
         stateId,
         open: { position: [x, openY, openZ], rotation: [angle, 0, 0] },
         duration: 0.9,
+        unblocksWhenOpen: false,
       },
       interact: {
         lock: {
@@ -452,12 +625,17 @@ export class LevelBuilder {
     id?: string
     at: Vec3 // bottom-centre of door
     size?: [number, number] // [width, height], default [1.1, 2.3]
-    keyItemId: string
+    /** Locked by this inventory item... */
+    keyItemId?: string
+    /** ...or by a code on a padlock (which is drawn on the door). */
+    code?: string
     color?: string
     frameColor?: string
     lockedMessage?: string
     rotationY?: number
     exit?: boolean
+    /** Which side of the door the handle is on (the side the player approaches from). */
+    handleSide?: 'north' | 'south'
   }) {
     const id = opts.id ?? 'exit-door'
     const [sw, sh] = opts.size ?? [1.1, 2.3]
@@ -470,6 +648,16 @@ export class LevelBuilder {
     this.box({ id: `${id}-frame-right`, name: 'Door frame (R)', at: [x + halfW + 0.06, y + frameH / 2 - 0.075, z], size: [0.12, frameH, 0.18], color: frameColor, roughness: 0.35, metalness: 0.6, emissive: '#2a1a08', emissiveIntensity: 0.4, isSolid: true })
     this.box({ id: `${id}-frame-top`, name: 'Door frame (top)', at: [x, y + frameH - 0.07, z], size: [sw + 0.28, 0.14, 0.18], color: frameColor, roughness: 0.35, metalness: 0.6, emissive: '#2a1a08', emissiveIntensity: 0.4, isSolid: true })
 
+    const interact: Interact = {
+      lock: {
+        requires: opts.code
+          ? { kind: 'code', code: opts.code }
+          : { kind: 'item', itemId: opts.keyItemId ?? 'key', held: true },
+        lockedMessage: opts.lockedMessage ?? (opts.code ? 'A padlock. It wants a code.' : 'The door is locked. You need a key.'),
+        consumeItem: false,
+      },
+      behavior: { type: 'exit' },
+    }
     this.box({
       id,
       name: 'Exit Door',
@@ -482,23 +670,33 @@ export class LevelBuilder {
       emissiveIntensity: 0.6,
       isSolid: true,
       rotationY: opts.rotationY,
-      interact: {
-        lock: {
-          requires: { kind: 'item', itemId: opts.keyItemId },
-          lockedMessage: opts.lockedMessage ?? 'The door is locked. You need a key.',
-          consumeItem: false,
-        },
-        behavior: { type: 'exit' },
-      },
+      interact,
     })
 
-    this.sphere({ id: `${id}-handle`, name: 'Door handle', at: [x + halfW - 0.15, y + sh / 2, z + 0.07], size: [0.07, 0.07, 0.07], color: '#f3c766', roughness: 0.2, metalness: 0.9, emissive: '#3a2a0a', emissiveIntensity: 0.5 })
+    if (opts.code) {
+      // A hasp and a heavy brass padlock across the door, on the player's side.
+      // They carry the door's interaction so they never get in the way of it.
+      const face = opts.handleSide === 'north' ? -1 : 1
+      const lz = z + face * 0.075
+      const ly = y + sh * 0.42
+      this.box({ id: `${id}-hasp`, name: 'Padlock', at: [x, ly + 0.02, lz], size: [0.36, 0.07, 0.02], color: '#4a4a4a', roughness: 0.4, metalness: 0.8, interact })
+      this.box({ id: `${id}-lock`, name: 'Padlock', at: [x, ly - 0.08, lz + face * 0.035], size: [0.17, 0.15, 0.07], color: '#b8903a', roughness: 0.3, metalness: 0.85, interact })
+      this.box({ id: `${id}-shackle-top`, name: 'Padlock', at: [x, ly + 0.07, lz + face * 0.035], size: [0.11, 0.025, 0.03], color: '#8a8a8a', roughness: 0.25, metalness: 0.95, interact })
+      for (const sx of [-1, 1]) {
+        this.box({ id: `${id}-shackle${sx}`, name: 'Padlock', at: [x + sx * 0.045, ly, lz + face * 0.035], size: [0.022, 0.15, 0.03], color: '#8a8a8a', roughness: 0.25, metalness: 0.95, interact })
+      }
+    }
+
+    this.sphere({ id: `${id}-handle`, name: 'Door handle', at: [x + halfW - 0.15, y + sh / 2, z + (opts.handleSide === 'north' ? -0.07 : 0.07)], size: [0.07, 0.07, 0.07], color: '#f3c766', roughness: 0.2, metalness: 0.9, emissive: '#3a2a0a', emissiveIntensity: 0.5 })
 
     if (opts.exit !== false) this.setExit(id)
   }
 
   /**
-   * Simple 4-leg wooden table.
+   * Simple 4-leg wooden table. `rotationY` turns the whole table about its
+   * centre (its long side runs along x at 0). A `cloth` colour throws a
+   * tablecloth over it, turned by `clothSpin` (default 45°) so its corners hang
+   * over the edges and the table's own corners stay visible.
    */
   table(opts: {
     id?: string
@@ -507,24 +705,51 @@ export class LevelBuilder {
     legHeight?: number
     topColor?: string
     legColor?: string
+    rotationY?: number
+    cloth?: string
+    clothSpin?: number
+    /** Put on every part of the table (top, legs, cloth) so none of it blocks the ray. */
+    interact?: Interact
   }) {
     const id = opts.id ?? this.uid('table')
     const [tw, tt, td] = opts.top ?? [1.2, 0.08, 0.7]
     const lh = opts.legHeight ?? 0.75
     const [x, y, z] = opts.at
-    const topY = y + lh + tt / 2
+    const rot = opts.rotationY ?? 0
+    const c = Math.cos(rot)
+    const sn = Math.sin(rot)
+    // Local (lx, lz) offsets from the table's centre → world, matching a box's
+    // own rotationY (three.js rotates +x towards -z).
+    const at = (lx: number, ly: number, lz: number): Vec3 => [x + lx * c + lz * sn, ly, z - lx * sn + lz * c]
     const topColor = opts.topColor ?? '#4a2f1a'
     const legColor = opts.legColor ?? '#2e1d10'
 
-    this.box({ id, name: 'Table', at: [x, topY, z], size: [tw, tt, td], color: topColor, roughness: 0.6, metalness: 0.05, isSolid: true })
+    this.box({ id, name: 'Table', at: at(0, y + lh + tt / 2, 0), size: [tw, tt, td], color: topColor, roughness: 0.6, metalness: 0.05, rotationY: rot, isSolid: true, interact: opts.interact })
     const inset = 0.08
     const legSize: Vec3 = [0.08, lh, 0.08]
     const halfW = tw / 2 - inset
     const halfD = td / 2 - inset
-    this.box({ id: `${id}-leg-1`, name: 'Table leg 1', at: [x - halfW, y + lh / 2, z - halfD], size: legSize, color: legColor, roughness: 0.8 })
-    this.box({ id: `${id}-leg-2`, name: 'Table leg 2', at: [x + halfW, y + lh / 2, z - halfD], size: legSize, color: legColor, roughness: 0.8 })
-    this.box({ id: `${id}-leg-3`, name: 'Table leg 3', at: [x - halfW, y + lh / 2, z + halfD], size: legSize, color: legColor, roughness: 0.8 })
-    this.box({ id: `${id}-leg-4`, name: 'Table leg 4', at: [x + halfW, y + lh / 2, z + halfD], size: legSize, color: legColor, roughness: 0.8 })
+    let n = 1
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        this.box({ id: `${id}-leg-${n}`, name: `Table leg ${n}`, at: at(sx * halfW, y + lh / 2, sz * halfD), size: legSize, color: legColor, roughness: 0.8, rotationY: rot, interact: opts.interact })
+        n++
+      }
+    }
+
+    if (opts.cloth) {
+      const obj: SceneObject = {
+        id: `${id}-cloth`,
+        name: 'Tablecloth',
+        mesh: { kind: 'cloth', tableSize: [tw, td], side: 1.05, spin: opts.clothSpin ?? Math.PI / 4, color: opts.cloth },
+        transform: { position: at(0, y + lh + tt, 0), rotation: [0, rot, 0], scale: [1, 1, 1] },
+        isSolid: false,
+        castShadow: false,
+        receiveShadow: true,
+        interact: opts.interact,
+      }
+      this.push(obj)
+    }
   }
 }
 
@@ -535,6 +760,7 @@ export function defineLevel(meta: LevelMeta): Level {
     id: meta.id,
     name: meta.name,
     version: 1 as const,
+    tags: meta.tags ?? [],
     background: meta.background ?? '#0a0a0a',
     playerStart: {
       position: meta.playerStart.position,
@@ -544,6 +770,7 @@ export function defineLevel(meta: LevelMeta): Level {
     lights: L.lights,
     objects: L.objects,
     initialState: {},
+    rules: L.rules,
   }
   // Validate so authoring mistakes surface immediately on module load.
   return LevelSchema.parse(raw)

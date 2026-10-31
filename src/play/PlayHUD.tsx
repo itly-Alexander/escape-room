@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useWorld } from '@/state/world'
 import { tryInteract } from '@/engine/interact'
 import type { SceneObject } from '@/schema/level'
-import type { ReticleTarget } from './InteractReticle'
+import { heldReadable, type ReticleTarget } from './InteractReticle'
 
 type Props = {
   reticle: ReticleTarget | null
@@ -20,6 +20,7 @@ export function PlayHUD({ reticle, codePromptObjectId, onCloseCodePrompt, onExit
   const selectItem = useWorld((s) => s.selectItem)
   const pruneHud = useWorld((s) => s.pruneHud)
   const activeReadable = useWorld((s) => s.activeReadable)
+  const hide = useWorld((s) => s.hide)
   const [, force] = useState(0)
 
   useEffect(() => {
@@ -59,6 +60,14 @@ export function PlayHUD({ reticle, codePromptObjectId, onCloseCodePrompt, onExit
         <div style={reticleDot(!!reticle)} />
       </div>
 
+      {/* Closing in while hiding */}
+      <div style={{ ...hideVignetteStyle, opacity: hide ? (hide.phase === 'hidden' ? 1 : 0.6) : 0 }} />
+      {hide?.phase === 'hidden' && (
+        <div style={promptStyle}>
+          <kbd style={kbd}>E</kbd> Leave hiding place
+        </div>
+      )}
+
       {/* Interact prompt */}
       {reticle && (
         <div style={promptStyle}>
@@ -76,7 +85,12 @@ export function PlayHUD({ reticle, codePromptObjectId, onCloseCodePrompt, onExit
       </div>
 
       {/* Readable panel (parchment, persistent while looking at the source) */}
-      {activeReadable && <ReadablePanel text={activeReadable.text} />}
+      {activeReadable && <ReadablePanel text={activeReadable.text} handwritten={activeReadable.handwritten} />}
+      {!reticle && !activeReadable && heldReadable(level) && (
+        <div style={promptStyle}>
+          <kbd style={kbd}>E</kbd> Read
+        </div>
+      )}
 
       {/* Inventory hotbar */}
       {inventory.length > 0 && level && (
@@ -124,10 +138,10 @@ export function PlayHUD({ reticle, codePromptObjectId, onCloseCodePrompt, onExit
   )
 }
 
-function ReadablePanel({ text }: { text: string }) {
+function ReadablePanel({ text, handwritten }: { text: string; handwritten?: boolean }) {
   return (
     <div style={readableBackdropStyle}>
-      <div style={readableCardStyle}>{text}</div>
+      <div style={handwritten ? { ...readableCardStyle, ...handwrittenStyle } : readableCardStyle}>{text}</div>
     </div>
   )
 }
@@ -209,6 +223,8 @@ function PadlockModal({
   const [shake, setShake] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
+  const [selected, setSelected] = useState(0)
+
   const change = (i: number, delta: number) => {
     setDigits((d) => d.map((v, j) => (j === i ? (v + delta + 10) % 10 : v)))
   }
@@ -225,11 +241,17 @@ function PadlockModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel()
       else if (e.key === 'Enter') submit()
+      else if (e.code === 'KeyW') change(selected, 1)
+      else if (e.code === 'KeyS') change(selected, -1)
+      else if (e.code === 'KeyA') setSelected((s) => Math.max(0, s - 1))
+      else if (e.code === 'KeyD') setSelected((s) => Math.min(codeLength - 1, s + 1))
+      else return
+      e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [digits])
+  }, [digits, selected])
 
   return (
     <div style={padlockBackdrop} onClick={onCancel}>
@@ -261,8 +283,14 @@ function PadlockModal({
           <div style={padlockLabelStyle}>Enter combination</div>
           <div style={rowStyle}>
             {digits.map((d, i) => (
-              <Dial key={i} value={d} onUp={() => change(i, 1)} onDown={() => change(i, -1)} />
+              <Dial key={i} value={d} active={i === selected} onSelect={() => setSelected(i)} />
             ))}
+          </div>
+
+          <div style={hintRowStyle}>
+            <span><kbd style={hintKey}>W</kbd><kbd style={hintKey}>S</kbd> change digit</span>
+            <span><kbd style={hintKey}>A</kbd><kbd style={hintKey}>D</kbd> select dial</span>
+            <span><kbd style={hintKey}>Enter</kbd> unlock</span>
           </div>
 
           <div style={buttonRowStyle}>
@@ -285,21 +313,24 @@ function PadlockModal({
   )
 }
 
-function Dial({ value, onUp, onDown }: { value: number; onUp: () => void; onDown: () => void }) {
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault()
-    if (e.deltaY < 0) onUp()
-    else onDown()
-  }
+function Dial({ value, active, onSelect }: { value: number; active: boolean; onSelect: () => void }) {
   return (
-    <div style={dialStyle} onWheel={onWheel}>
-      <button style={dialArrow} onClick={onUp} aria-label="increment">▲</button>
-      <div style={dialWindow}>
+    <div style={dialStyle} onClick={onSelect}>
+      <div style={{ ...dialArrow, opacity: active ? 1 : 0.25 }}>▲</div>
+      <div
+        style={{
+          ...dialWindow,
+          borderColor: active ? '#ffb84d' : '#0a0806',
+          boxShadow: active
+            ? 'inset 0 2px 6px rgba(0,0,0,0.6), 0 0 12px rgba(255,184,77,0.45)'
+            : dialWindow.boxShadow,
+        }}
+      >
         <div style={{ ...dialDigit, opacity: 0.25 }}>{(value + 1) % 10}</div>
         <div style={dialDigit}>{value}</div>
         <div style={{ ...dialDigit, opacity: 0.25 }}>{(value + 9) % 10}</div>
       </div>
-      <button style={dialArrow} onClick={onDown} aria-label="decrement">▼</button>
+      <div style={{ ...dialArrow, opacity: active ? 1 : 0.25 }}>▼</div>
     </div>
   )
 }
@@ -319,6 +350,10 @@ const reticleDot = (hot: boolean): React.CSSProperties => ({
 const promptStyle: React.CSSProperties = {
   position: 'fixed', left: '50%', top: 'calc(50% + 28px)', transform: 'translateX(-50%)',
   background: 'rgba(0,0,0,0.55)', padding: '6px 12px', borderRadius: 6, fontSize: 13,
+}
+const hideVignetteStyle: React.CSSProperties = {
+  position: 'fixed', inset: 0, pointerEvents: 'none', transition: 'opacity 0.9s ease',
+  background: 'radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.78) 100%)',
 }
 const kbd: React.CSSProperties = {
   background: '#333', border: '1px solid #555', borderRadius: 3, padding: '1px 6px', marginRight: 6,
@@ -349,6 +384,18 @@ const slotStyle: React.CSSProperties = {
 const readableBackdropStyle: React.CSSProperties = {
   position: 'fixed', left: 0, right: 0, bottom: 120,
   display: 'flex', justifyContent: 'center', pointerEvents: 'none',
+}
+// Ink on an old sheet, in a hand-written face.
+const handwrittenStyle: React.CSSProperties = {
+  fontFamily: '"Caveat", "IM Fell English", cursive',
+  fontStyle: 'normal',
+  fontSize: 25,
+  lineHeight: 1.3,
+  color: '#1b1a2e',
+  maxWidth: 520,
+  textAlign: 'left',
+  transform: 'rotate(-0.8deg)',
+  whiteSpace: 'pre-wrap',
 }
 const readableCardStyle: React.CSSProperties = {
   maxWidth: 540,
@@ -398,6 +445,15 @@ const rowStyle: React.CSSProperties = {
 const dialStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
 }
+const hintRowStyle: React.CSSProperties = {
+  display: 'flex', flexWrap: 'wrap', gap: '4px 14px', justifyContent: 'center',
+  marginTop: 16, fontFamily: '"Cinzel", serif', fontSize: 10, letterSpacing: 1,
+  color: '#d6c08a', opacity: 0.7,
+}
+const hintKey: React.CSSProperties = {
+  background: 'rgba(0,0,0,0.35)', border: '1px solid #5a5248', borderRadius: 3,
+  padding: '0 5px', marginRight: 3, fontFamily: 'inherit', fontSize: 10,
+}
 const dialWindow: React.CSSProperties = {
   width: 48, height: 72,
   background: 'linear-gradient(180deg, #141210 0%, #2a2420 50%, #141210 100%)',
@@ -406,7 +462,6 @@ const dialWindow: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
   boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.6), 0 1px 2px rgba(255,255,255,0.08)',
   overflow: 'hidden',
-  cursor: 'ns-resize',
 }
 const dialDigit: React.CSSProperties = {
   fontFamily: '"Cinzel", serif',
@@ -416,15 +471,11 @@ const dialDigit: React.CSSProperties = {
   lineHeight: 1.15,
 }
 const dialArrow: React.CSSProperties = {
-  width: 48, height: 20,
-  background: 'linear-gradient(180deg, #857a68 0%, #5a5248 100%)',
-  color: '#2a2420',
-  border: '1px solid #2a2520',
-  borderRadius: 3,
-  cursor: 'pointer',
+  width: 48, height: 16,
+  color: '#f3d9a5',
   fontSize: 10,
-  padding: 0,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
+  transition: 'opacity 120ms',
 }
 const buttonRowStyle: React.CSSProperties = {
   display: 'flex', gap: 8, marginTop: 20, justifyContent: 'center',

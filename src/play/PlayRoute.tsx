@@ -11,6 +11,8 @@ import { FPSController } from './FPSController'
 import { InteractReticle, type ReticleTarget } from './InteractReticle'
 import { PlayHUD } from './PlayHUD'
 import { HeldItem } from './HeldItem'
+import { JumpScare } from './JumpScare'
+import { PursuitDirector } from '@/engine/PursuitDirector'
 import { DevHUD } from './DevHUD'
 
 const READABLE_DECAY_MS = 3200
@@ -18,12 +20,21 @@ const READABLE_DECAY_MS = 3200
 function RenderedObjects() {
   const level = useWorld((s) => s.level)
   const pickedUp = useWorld((s) => s.pickedUpObjectIds)
+  const flags = useWorld((s) => s.flags)
+  // Objects held back by `appearsWhen` come into the world the first time
+  // their flag is set, and then stay even if it's switched off again.
+  const appeared = useRef(new Set<string>())
   if (!level) return null
   return (
     <>
-      {level.objects.map((o) =>
-        pickedUp.has(o.id) ? null : <SceneObjectView key={o.id} object={o} animatePose />,
-      )}
+      {level.objects.map((o) => {
+        if (pickedUp.has(o.id)) return null
+        if (o.appearsWhen && !appeared.current.has(o.id)) {
+          if (!flags[o.appearsWhen]) return null
+          appeared.current.add(o.id)
+        }
+        return <SceneObjectView key={o.id} object={o} animatePose />
+      })}
     </>
   )
 }
@@ -87,10 +98,28 @@ export function PlayRoute() {
     if (won && document.pointerLockElement) document.exitPointerLock()
   }, [won])
 
+  // Game over: let go of the mouse and stop the music; the jump scare takes over.
+  const caught = useWorld((s) => s.caught)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    if (!caught) return
+    if (document.pointerLockElement) document.exitPointerLock()
+    ambientMusic.stop()
+  }, [caught])
+  const retry = () => {
+    if (!levelId) return
+    const l = loadBundledLevel(levelId)
+    if (!l) return
+    loadLevel(l)
+    ambientMusic.start('play')
+    setAttempt((n) => n + 1) // remounts the scene, so the monster starts over
+    setHasEverLocked(false)
+  }
+
   // Readable panel: persists while the reticle is still on the source object.
   // Starts a short decay the moment you look away; cancels if you look back.
   useEffect(() => {
-    if (!activeReadable) {
+    if (!activeReadable || activeReadable.persistent) {
       if (readableDecayRef.current) {
         clearTimeout(readableDecayRef.current)
         readableDecayRef.current = null
@@ -118,6 +147,18 @@ export function PlayRoute() {
     canvas?.requestPointerLock?.()
   }
 
+  // The padlock is keyboard-driven (WASD), so release the pointer lock while
+  // it's open — otherwise the same keys would walk the player around.
+  useEffect(() => {
+    if (codePrompt && document.pointerLockElement) document.exitPointerLock()
+  }, [codePrompt])
+
+  const closeCodePrompt = () => {
+    setCodePrompt(null)
+    // Best effort: browsers may refuse without a fresh click/keypress.
+    try { requestLock() } catch { /* falls back to the pause menu */ }
+  }
+
   if (error) {
     return (
       <div style={{ padding: 40 }}>
@@ -130,15 +171,22 @@ export function PlayRoute() {
   if (!level) return <div style={{ padding: 40 }}>Loading…</div>
 
   // True "paused" state: pause menu is up, not an in-game modal.
-  const pauseMenuOpen = !locked && !codePrompt && !won
+  const pauseMenuOpen = hasEverLocked && !locked && !codePrompt && !won && !caught
+  // Before the first capture there's no dialog, just a click-to-begin hint.
+  const showBeginHint = !hasEverLocked && !locked && !codePrompt && !won && !caught
   // Freeze r3f render loop (and thus flicker/pose animations) while the pause
   // menu is up. Modals (code prompt, win overlay) do NOT freeze — the player
   // needs to see the chest lid open after unlocking.
   const frameloop = pauseMenuOpen ? 'demand' : 'always'
 
   return (
-    <div ref={canvasHostRef} style={{ width: '100vw', height: '100vh' }}>
+    <div
+      ref={canvasHostRef}
+      style={{ width: '100vw', height: '100vh' }}
+      onClick={showBeginHint ? requestLock : undefined}
+    >
       <Canvas
+        key={attempt}
         shadows
         frameloop={frameloop}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
@@ -148,6 +196,7 @@ export function PlayRoute() {
         <LevelLights lights={level.lights} />
         <FullbrightOverlay />
         <RenderedObjects />
+        <PursuitDirector />
         <FPSController level={level} locked={locked} />
         <InteractReticle
           level={level}
@@ -160,16 +209,18 @@ export function PlayRoute() {
       <PlayHUD
         reticle={locked ? reticle : null}
         codePromptObjectId={codePrompt}
-        onCloseCodePrompt={() => setCodePrompt(null)}
+        onCloseCodePrompt={closeCodePrompt}
         onExit={() => navigate('/')}
       />
+      {showBeginHint && <BeginHint />}
       {pauseMenuOpen && (
         <PauseOverlay
-          mode={hasEverLocked ? 'paused' : 'start'}
+          mode="paused"
           onResume={requestLock}
           onQuit={() => navigate('/')}
         />
       )}
+      {caught && <JumpScare onRetry={retry} onQuit={() => navigate('/')} />}
       {import.meta.env.DEV && <DevHUD reticle={reticle} />}
     </div>
   )
@@ -185,11 +236,14 @@ function PauseOverlay({
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
-        <h1 style={{ margin: 0, fontSize: 28, letterSpacing: 2 }}>
+        <h1 style={titleStyle}>
           {mode === 'paused' ? 'Paused' : 'Ready?'}
         </h1>
+        <div style={subtitleStyle}>
+          {mode === 'paused' ? '— the chamber waits —' : '— a chamber of locks and quiet secrets —'}
+        </div>
         <div style={{ height: 24 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 220 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 220 }}>
           <button style={primaryBtn} onClick={onResume}>
             {mode === 'paused' ? 'Resume' : 'Start'}
           </button>
@@ -203,11 +257,23 @@ function PauseOverlay({
   )
 }
 
+function BeginHint() {
+  return (
+    <div style={beginHintStyle}>
+      click to begin
+      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+        WASD move · Shift sprint · C crouch · E / Space interact · Esc pause
+      </div>
+    </div>
+  )
+}
+
 function ControlsLegend() {
   return (
-    <div style={{ marginTop: 28, fontSize: 12, opacity: 0.6, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
+    <div style={{ marginTop: 28, fontSize: 13, opacity: 0.7, color: '#c9a76a', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
       <code>W A S D</code><span>move</span>
-      <code>Shift</code><span>crouch</span>
+      <code>Shift</code><span>sprint</span>
+      <code>C</code><span>crouch</span>
       <code>Mouse</code><span>look</span>
       <code>E / Space</code><span>interact</span>
       <code>Esc</code><span>pause</span>
@@ -215,20 +281,47 @@ function ControlsLegend() {
   )
 }
 
+// Styled to match the start menu (MenuRoute.tsx) so the theme carries through.
 const overlayStyle: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.78)',
+  position: 'fixed', inset: 0,
+  background:
+    'radial-gradient(ellipse at center, rgba(7,5,10,0.72) 0%, rgba(7,5,10,0.92) 100%)',
   display: 'flex', alignItems: 'center', justifyContent: 'center',
-  color: '#eaeaea', zIndex: 10,
+  color: '#e8dcc0', zIndex: 10,
+  fontFamily: '"IM Fell English", "Cinzel", serif',
 }
 const cardStyle: React.CSSProperties = {
-  background: '#141414', border: '1px solid #222', borderRadius: 10,
-  padding: '32px 36px', minWidth: 320, textAlign: 'center',
+  background: 'linear-gradient(180deg, rgba(50, 36, 22, 0.88) 0%, rgba(32, 22, 14, 0.88) 100%)',
+  border: '1px solid rgba(120, 85, 50, 0.5)', borderRadius: 6,
+  boxShadow: '0 20px 60px rgba(0,0,0,0.7), inset 0 0 60px rgba(0,0,0,0.4)',
+  padding: '32px 40px 36px', minWidth: 340, textAlign: 'center',
+}
+const titleStyle: React.CSSProperties = {
+  fontFamily: '"Cinzel Decorative", serif', fontWeight: 900, fontSize: 40,
+  margin: 0, letterSpacing: 4, color: '#f3d9a5',
+  textShadow: '0 0 20px rgba(255, 150, 60, 0.4), 0 0 2px rgba(0,0,0,0.9), 0 4px 12px rgba(0,0,0,0.9)',
+}
+const subtitleStyle: React.CSSProperties = {
+  marginTop: 8, fontStyle: 'italic', fontSize: 15, opacity: 0.7, color: '#d9c08a', letterSpacing: 1,
+}
+const beginHintStyle: React.CSSProperties = {
+  position: 'fixed', left: 0, right: 0, bottom: 48, textAlign: 'center',
+  fontFamily: '"IM Fell English", "Cinzel", serif', fontStyle: 'italic',
+  fontSize: 15, letterSpacing: 2, color: '#c9a76a', opacity: 0.8,
+  textShadow: '0 2px 6px rgba(0,0,0,0.9)', pointerEvents: 'none',
+}
+const menuBtn: React.CSSProperties = {
+  color: '#f3d9a5', padding: '10px 16px', borderRadius: 3, cursor: 'pointer',
+  fontFamily: '"Cinzel", serif', fontSize: 13, letterSpacing: 2, textTransform: 'uppercase',
 }
 const primaryBtn: React.CSSProperties = {
-  background: '#1a3a1a', color: '#dff5df', border: '1px solid #2a5a2a',
-  padding: '10px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 14,
+  ...menuBtn,
+  background: 'linear-gradient(180deg, #5a3a1e 0%, #3a2410 100%)',
+  border: '1px solid #8a5e30',
 }
 const ghostBtn: React.CSSProperties = {
-  background: 'transparent', color: '#eaeaea', border: '1px solid #333',
-  padding: '10px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 14,
+  ...menuBtn,
+  background: 'rgba(20, 14, 8, 0.5)',
+  border: '1px solid rgba(120, 85, 50, 0.5)',
+  color: '#c9a76a',
 }

@@ -21,10 +21,11 @@ export function tryInteract(object: SceneObject, enteredCode?: string): Interact
       const needed = lock.requires.itemId
       const hasIt = w.inventory.includes(needed)
       const holdingIt = w.selectedItem === needed
-      if (!holdingIt) {
+      const mustHold = lock.requires.held !== false
+      if (mustHold ? !holdingIt : !hasIt) {
         sfx.play('locked')
         const label = labelForItem(w.level, needed) ?? needed
-        const message = hasIt
+        const message = hasIt && mustHold
           ? `You need to hold the ${label} first.`
           : lock.lockedMessage ?? 'Locked. Need an item.'
         return { kind: 'locked', message, objectId: object.id }
@@ -74,18 +75,42 @@ function runBehavior(object: SceneObject) {
       w.markPickedUp(object.id)
       w.pushHud(`Picked up ${b.label ?? b.itemId}`)
       sfx.play('pickup')
+      if (b.readText) w.setActiveReadable({ objectId: `held:${b.itemId}`, text: b.readText, handwritten: b.handwritten, persistent: true })
       return
     case 'toggleState':
       w.toggleFlag(b.stateId)
-      sfx.play('open')
+      // Labelled toggles are doors: a hinge squeak, not a chest creak.
+      sfx.play(b.label ? 'door' : 'open')
       return
     case 'setState':
       w.setFlag(b.stateId, b.value)
-      sfx.play('open')
+      sfx.play(b.sound ?? 'open')
       return
     case 'readable':
-      w.setActiveReadable({ objectId: object.id, text: b.text })
+      w.setActiveReadable({ objectId: object.id, text: b.text, handwritten: b.handwritten })
       sfx.play('read')
+      return
+    case 'combine': {
+      if (w.flags[b.stateId]) {
+        w.pushHud(b.already ?? 'Nothing more to do here.', 3500)
+        return
+      }
+      const chosen = b.groups.map((g) => g.itemIds.find((id) => w.inventory.includes(id)))
+      const missing = b.groups.filter((_, i) => !chosen[i]).map((g) => g.label)
+      if (missing.length) {
+        w.pushHud(`${b.missing ?? 'Something is still missing:'} ${missing.join(', ')}.`, 5000)
+        sfx.play('locked')
+        return
+      }
+      for (const id of chosen) if (id) w.removeItem(id)
+      w.setFlag(b.stateId, true)
+      w.pushHud(b.done, 8000)
+      sfx.play('win')
+      return
+    }
+    case 'hide':
+      if (w.hide || (b.group && w.flags[`flip-${b.group}`])) return
+      w.startHide(b)
       return
     case 'exit':
       if (w.level?.exitId === object.id) {
