@@ -77,6 +77,10 @@ export function MenuRoute() {
         </div>
 
         {!audioStarted && <div style={hintStyle}>click anywhere to begin</div>}
+        <div style={versionStyle}>
+          v {__APP_VERSION__}
+          {import.meta.env.DEV && " (dev)"}
+        </div>
       </div>
     </div>
   );
@@ -221,4 +225,17 @@ const hintStyle: React.CSSProperties = {
   color: "#c9a76a",
   letterSpacing: 2,
   animation: "none",
+};
+const versionStyle: React.CSSProperties = {
+  position: "absolute",
+  bottom: 10,
+  left: 0,
+  right: 0,
+  textAlign: "center",
+  fontFamily: "monospace",
+  fontSize: 11,
+  opacity: 0.35,
+  color: "#c9a76a",
+  letterSpacing: 1,
+  pointerEvents: "none",
 };
