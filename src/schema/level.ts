@@ -113,7 +113,15 @@ const DollMesh = z.object({
 // A bare bulb hanging on its flex. On the house circuit, it dies with the lights.
 const BulbMesh = z.object({ kind: z.literal('bulb'), drop: z.number().positive().default(0.6), color: Color.default('#ffd9a0') })
 
-const Mesh = z.discriminatedUnion('kind', [PrimitiveMesh, GltfMesh, FlameMesh, MonsterMesh, ClothMesh, LanternMesh, KeyMesh, PuddleMesh, DollMesh, BulbMesh])
+// A big iron hand-wheel on a wall plate (engine/Wheel.tsx). Cranking it (the
+// `crank` behaviour on `valueId`) turns it and slowly raises a shutter over a
+// window, until `color` shows; `label` is painted on the plate.
+const WheelMesh = z.object({ kind: z.literal('wheel'), valueId: z.string(), color: Color, label: z.string().default('') })
+// A knob with a coloured lens that shows colors[value of `valueId`], dark until
+// first turned, and `label` on a little plate above.
+const DialMesh = z.object({ kind: z.literal('dial'), valueId: z.string(), colors: z.array(Color).min(1), label: z.string().default('') })
+
+const Mesh = z.discriminatedUnion('kind', [PrimitiveMesh, GltfMesh, FlameMesh, MonsterMesh, ClothMesh, LanternMesh, KeyMesh, PuddleMesh, DollMesh, BulbMesh, WheelMesh, DialMesh])
 
 const Transform = z.object({
   position: Vec3.default([0, 0, 0]),
@@ -126,6 +134,8 @@ const LockRequirement = z.discriminatedUnion('kind', [
   // default it must also be the selected item.
   z.object({ kind: z.literal('item'), itemId: z.string(), held: z.boolean().default(true) }),
   z.object({ kind: z.literal('code'), code: z.string() }),
+  // Every value in `valueIds` (set by `cycle` behaviours) equals its entry in `equals`.
+  z.object({ kind: z.literal('values'), valueIds: z.array(z.string()), equals: z.array(z.number()) }),
 ])
 
 const Behavior = z.discriminatedUnion('type', [
@@ -150,6 +160,11 @@ const Behavior = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('readable'), text: z.string(), imageSrc: z.string().optional(), handwritten: z.boolean().optional() }),
   z.object({ type: z.literal('exit') }),
+  // Hold E to turn it. Progress (value `valueId`, 0 to 1) builds over `seconds`
+  // of turning, in as many goes as it takes, and keeps when you let go.
+  z.object({ type: z.literal('crank'), valueId: z.string(), seconds: z.number().positive().default(6), prompt: z.string().optional(), done: z.string().optional() }),
+  // Each press steps value `valueId` on to the next of `count` settings (0 … count-1).
+  z.object({ type: z.literal('cycle'), valueId: z.string(), count: z.number().int().positive(), prompt: z.string().optional() }),
   // Hand in one item from each group (each group is "any one of these"). If
   // they're all there, they're used up and `stateId` is set; if not, the
   // player is told which groups are still missing.

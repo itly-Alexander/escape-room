@@ -1010,7 +1010,10 @@ function HunterDoll({ mesh }: { mesh: DollMesh }) {
     const key = world.doors.map((d) => (flags[d.flag] ? '1' : '0')).join('')
     if (key !== world.key || !world.boxes.length) {
       world.key = key
-      world.boxes = [...world.fixed, ...world.doors.filter((d) => !flags[d.flag]).map((d) => d.box)]
+      // A shut leaf is a touch narrower and shorter than its opening; pad it so
+      // she can't be glimpsed through the crack round a closed door.
+      const pad = (b: AABB): AABB => ({ min: b.min.clone().subScalar(0.04), max: b.max.clone().addScalar(0.04) })
+      world.boxes = [...world.fixed, ...world.doors.filter((d) => !flags[d.flag]).map((d) => pad(d.box))]
     }
     let seen = false
     if (locked && watch.blink < 0.5) {
@@ -1025,6 +1028,10 @@ function HunterDoll({ mesh }: { mesh: DollMesh }) {
           const p = tmp.v.clone().project(camera)
           if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) continue
           if (segmentHitsBox(camera.position, tmp.v, world.boxes)) continue
+          // A hand or foot poking through the wall from the far side doesn't count:
+          // the mark has to be on her side of anything solid.
+          tmp.head.set(s.x, tmp.v.y, s.z)
+          if (segmentHitsBox(tmp.head, tmp.v, world.boxes)) continue
           seen = true
           break
         }

@@ -20,6 +20,8 @@ export type HideState = { phase: 'entering' | 'hidden' | 'leaving'; spot: HideSp
 type WorldState = {
   level: Level | null
   flags: Record<string, boolean>
+  /** Numbers the level keeps: how far a wheel's been turned, which colour a dial shows. */
+  values: Record<string, number>
   inventory: string[]
   pickedUpObjectIds: Set<string>
   selectedItem: string | null
@@ -39,6 +41,7 @@ type WorldState = {
   loadLevel: (level: Level) => void
   setFlag: (id: string, value: boolean) => void
   toggleFlag: (id: string) => void
+  setValue: (id: string, value: number) => void
   addItem: (itemId: string) => void
   removeItem: (itemId: string) => void
   markPickedUp: (objectId: string) => void
@@ -70,6 +73,7 @@ function applyRules() {
 export const useWorld = create<WorldState>((set, get) => ({
   level: null,
   flags: {},
+  values: {},
   inventory: [],
   pickedUpObjectIds: new Set<string>(),
   selectedItem: null,
@@ -90,6 +94,7 @@ export const useWorld = create<WorldState>((set, get) => ({
     set({
       level,
       flags: { ...level.initialState },
+      values: {},
       inventory: [],
       pickedUpObjectIds: new Set<string>(),
       selectedItem: null,
@@ -109,6 +114,7 @@ export const useWorld = create<WorldState>((set, get) => ({
     set((s) => ({ flags: { ...s.flags, [id]: !s.flags[id] } }))
     applyRules()
   },
+  setValue: (id, value) => set((s) => ({ values: { ...s.values, [id]: value } })),
 
   addItem: (itemId) =>
     set((s) => (s.inventory.includes(itemId) ? s : { inventory: [...s.inventory, itemId] })),
@@ -145,6 +151,7 @@ export const useWorld = create<WorldState>((set, get) => ({
   reset: () =>
     set({
       flags: {},
+      values: {},
       inventory: [],
       pickedUpObjectIds: new Set<string>(),
       selectedItem: null,

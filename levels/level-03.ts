@@ -9,10 +9,13 @@ import { defineLevel, type LevelBuilder, type Vec3 } from "@/leveldsl";
 // blink, and when the lights fail. She opens shut doors too, though it takes
 // her a moment and you'll hear it.
 //
-// The front door is chained with a four-dial padlock. Its numbers are chalked
-// on four slates, one in each room off the hallway (nursery, dining room,
-// parlour, study), numbered I to IV. Which room has which numeral, and the
-// digits, change every time. Entering the code means taking your eyes off her.
+// The front door is chained, and the chains only let go when the four colour
+// dials beside it, I to IV, are set right. Each colour is behind the shutter of
+// a big iron wheel, one in each room off the hallway (nursery, dining room,
+// parlour, study), numbered I to IV. A wheel has to be turned for six seconds
+// in all before its shutter lifts, and turning it means taking your eyes off
+// her: crank a little, turn and stare her down, crank again. Which room has
+// which numeral, and the colours, change every time.
 //
 // Plan (x east, z south; metres):
 //
@@ -227,7 +230,7 @@ function buildWorkshop(L: LevelBuilder) {
       "If you're reading this, she knows you're in the house.\n\n" +
       "Clementine was the last doll I made, and the best. She will not move while she is being watched. Not a hair. So watch her. The moment you look away, or blink, or the lights fail, she comes for you.\n\n" +
       "She sleeps until the workshop door is opened.\n\n" +
-      "The front door is chained. I chalked the numbers of the lock on four slates, one in each room off the hall, marked I to IV. Read them in that order.\n\n" +
+      "The front door is chained. The chains let go when the four dials beside it show the right colours. I hid each colour behind the wheel in one of the rooms off the hall, marked I to IV. The wheels are stiff, so turn a little at a time, and keep looking back.\n\n" +
       "Shut doors slow her. She opens them, but it takes her a moment, and you'll hear it.",
   });
   L.candle({ id: "bench-candle", at: [bx - 0.2, top, -0.75], intensity: 1.3, distance: 5 });
@@ -449,7 +452,7 @@ function buildStudy(L: LevelBuilder) {
   L.sphere({ id: "dress-form-top", name: "Dress form", at: [3.7, 1.65, 8.4], size: [0.32, 0.32, 0.32], color: "#7f5559", roughness: 0.9 }).transform.scale = [1, 0.4, 1];
 }
 
-function buildFoyer(L: LevelBuilder, code: string) {
+function buildFoyer(L: LevelBuilder, code: number[]) {
   L.bulb({ id: "foyer-bulb", at: [10.4, H, 0], drop: 0.7, intensity: 8.0, distance: 9, castShadow: true });
   L.box({ id: "foyer-rug", name: "Rug", at: [10, 0.01, 0], size: [3, 0.02, 4.6], color: "#2c3a2c", roughness: 1, castShadow: false });
   // Her chair, by the door, facing down the hall. Not solid: she has to get out of it.
@@ -463,15 +466,29 @@ function buildFoyer(L: LevelBuilder, code: string) {
   L.cylinder({ id: "clock-face", name: "Clock", at: [11.42, 1.75, -3.2], size: [0.32, 0.02, 0.32], color: "#e6dcc4", roughness: 0.6 }).transform.rotation = [0, 0, Math.PI / 2];
   L.cylinder({ id: "coat-stand", name: "Coat stand", at: [8.6, 0.9, -4.5], size: [0.05, 1.8, 0.05], color: DARK, isSolid: true });
   L.sphere({ id: "coat", name: "Coat", at: [8.6, 1.35, -4.5], size: [0.4, 0.4, 0.4], color: "#1e1e22", roughness: 1 }).transform.scale = [1, 1.9, 0.75];
-  // The front door: chained, with a four-dial padlock.
+  // The front door: chained, and the chains held by four colour dials on the
+  // wall beside it, numbered I to IV from left to right as you face the door.
+  const dialIds = NUMERALS.map((_, k) => `door-dial-${k}`);
   L.keyedDoor({
     id: "front-door",
     at: [10, 0, 5],
     size: [1.1, 2.3],
-    code,
+    values: { valueIds: dialIds, equals: code },
+    lockedMessage: "The chains won't give. The four dials beside the door aren't right yet.",
     color: "#2a1a12",
     frameColor: "#4a3a26",
     handleSide: "north",
+  });
+  NUMERALS.forEach((numeral, k) => {
+    L.dial({
+      id: `door-dial-${numeral}`,
+      at: [9.12 - k * 0.3, 1.35, 4.9],
+      rotationY: Math.PI,
+      valueId: dialIds[k],
+      colors: COLORS.map((c) => c.hex),
+      label: numeral,
+      prompt: `Turn dial ${numeral}`,
+    });
   });
   // Chains across it.
   for (const [i, y] of [1.2, 1.6].entries()) {
@@ -483,7 +500,7 @@ function buildFoyer(L: LevelBuilder, code: string) {
     at: [10.75, 1.5, 4.88],
     size: [0.18, 0.24, 0.01],
     color: "#d8caa6",
-    text: "Four numbers. I, II, III, IV.\n\nDon't stand here turning the dials with her behind you.",
+    text: "Four colours. I, II, III, IV.\n\nSet each dial as soon as you have its colour. Don't stand here fiddling with all four with her behind you.",
   });
   // Moonlight through the fanlight over the door. Not on the circuit.
   L.box({ id: "fanlight", name: "Window", at: [10, 2.62, 4.89], size: [1.0, 0.36, 0.02], color: "#0c111b", emissive: "#2a3a52", emissiveIntensity: 0.45, castShadow: false });
@@ -493,26 +510,32 @@ function buildFoyer(L: LevelBuilder, code: string) {
   L.pointLight({ id: "fanlight-light", at: [10, 2.2, 3.9], color: "#8aa2d0", intensity: 3, distance: 7 });
 }
 
-// ---- The slates ---------------------------------------------------------------------
+// ---- The wheels -------------------------------------------------------------------
 
 const NUMERALS = ["I", "II", "III", "IV"];
-// One in each room, on the wall you face coming in through its door from the hall.
-const SLATE_SPOTS: Array<{ room: string; at: Vec3; rotY: number }> = [
-  { room: "nursery", at: [-2.5, 1.65, -8.88], rotY: 0 },
-  { room: "dining", at: [3.4, 1.7, -8.88], rotY: 0 },
-  { room: "parlour", at: [-2, 2.05, 8.88], rotY: Math.PI },
-  { room: "study", at: [5.2, 1.65, 8.88], rotY: Math.PI },
+const COLORS = [
+  { name: "red", hex: "#d0261c" },
+  { name: "green", hex: "#2fa040" },
+  { name: "blue", hex: "#2a5ad8" },
+  { name: "yellow", hex: "#e8c020" },
+];
+// One in each room, on the far wall (its plate flat on the wall's face).
+const WHEEL_SPOTS: Array<{ room: string; at: Vec3; rotY: number }> = [
+  { room: "nursery", at: [-2.5, 1.35, -8.9], rotY: 0 },
+  { room: "dining", at: [3.4, 1.35, -8.9], rotY: 0 },
+  { room: "parlour", at: [1.0, 1.35, 8.9], rotY: Math.PI },
+  { room: "study", at: [5.2, 1.35, 8.9], rotY: Math.PI },
 ];
 
 function makeLevel(seed: number) {
   const dice = mulberry32(seed);
-  const digits = NUMERALS.map(() => Math.floor(dice() * 10));
+  // The colour (an index into COLORS) each dial has to show. Colours can repeat.
+  const code = NUMERALS.map(() => Math.floor(dice() * COLORS.length));
   const order = [0, 1, 2, 3];
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(dice() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
-  const code = digits.join("");
 
   return defineLevel({
     id: "level-03",
@@ -531,21 +554,21 @@ function makeLevel(seed: number) {
       buildStudy(L);
       buildFoyer(L, code);
 
-      // Numeral k goes in room order[k].
+      // Wheel k goes in room order[k].
       order.forEach((spot, k) => {
-        const s = SLATE_SPOTS[spot];
+        const s = WHEEL_SPOTS[spot];
         const numeral = NUMERALS[k];
-        L.box({
-          id: `slate-${s.room}`,
-          name: "Slate",
+        const color = COLORS[code[k]];
+        L.wheel({
+          id: `wheel-${s.room}`,
           at: s.at,
-          size: [0.78, 0.58, 0.03],
-          color: "#ffffff",
-          roughness: 0.9,
-          texture: `chalk:${numeral}:${digits[k]}`,
           rotationY: s.rotY,
-          castShadow: false,
-          interact: { behavior: { type: "readable", text: `Chalked on the slate: ${numeral}. And under it, large: ${digits[k]}.` } },
+          valueId: `wheel-${numeral}`,
+          color: color.hex,
+          label: numeral,
+          seconds: 6,
+          prompt: `Turn wheel ${numeral} (hold)`,
+          done: `The shutter on wheel ${numeral} snaps up: ${color.name}.`,
         });
       });
 

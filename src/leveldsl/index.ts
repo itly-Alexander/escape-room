@@ -386,6 +386,37 @@ export class LevelBuilder {
   }
 
   /**
+   * A big hand-wheel on a wall plate, facing +z turned by `rotationY`. Holding E
+   * on it for `seconds` in all (any number of goes) reveals `color` in its window.
+   */
+  wheel(opts: { id: string; at: Vec3; rotationY?: number; valueId: string; color: string; label?: string; seconds?: number; prompt?: string; done?: string }) {
+    this.push({
+      id: opts.id,
+      name: 'Wheel',
+      mesh: { kind: 'wheel', valueId: opts.valueId, color: opts.color, label: opts.label ?? '' },
+      transform: { position: opts.at, rotation: [0, opts.rotationY ?? 0, 0], scale: [1, 1, 1] },
+      isSolid: false,
+      castShadow: true,
+      receiveShadow: true,
+      interact: { behavior: { type: 'crank', valueId: opts.valueId, seconds: opts.seconds ?? 6, prompt: opts.prompt, done: opts.done } },
+    })
+  }
+
+  /** A knob under a coloured lens, facing +z turned by `rotationY`. Each press shows the next of `colors`. */
+  dial(opts: { id: string; at: Vec3; rotationY?: number; valueId: string; colors: string[]; label?: string; prompt?: string }) {
+    this.push({
+      id: opts.id,
+      name: 'Dial',
+      mesh: { kind: 'dial', valueId: opts.valueId, colors: opts.colors, label: opts.label ?? '' },
+      transform: { position: opts.at, rotation: [0, opts.rotationY ?? 0, 0], scale: [1, 1, 1] },
+      isSolid: false,
+      castShadow: true,
+      receiveShadow: true,
+      interact: { behavior: { type: 'cycle', valueId: opts.valueId, count: opts.colors.length, prompt: opts.prompt } },
+    })
+  }
+
+  /**
    * A stub of a candle: wax, a tiny flame and a dim, flickering warm light.
    * `at` is the base of the candle (e.g. a tabletop). The light casts no
    * shadows, so it doesn't cost a shadow-map texture unit.
@@ -668,8 +699,10 @@ export class LevelBuilder {
     size?: [number, number] // [width, height], default [1.1, 2.3]
     /** Locked by this inventory item... */
     keyItemId?: string
-    /** ...or by a code on a padlock (which is drawn on the door). */
+    /** ...or by a code on a padlock (which is drawn on the door)... */
     code?: string
+    /** ...or by these values all being set just so (by dials the level places itself). */
+    values?: { valueIds: string[]; equals: number[] }
     color?: string
     frameColor?: string
     lockedMessage?: string
@@ -691,9 +724,11 @@ export class LevelBuilder {
 
     const interact: Interact = {
       lock: {
-        requires: opts.code
-          ? { kind: 'code', code: opts.code }
-          : { kind: 'item', itemId: opts.keyItemId ?? 'key', held: true },
+        requires: opts.values
+          ? { kind: 'values', ...opts.values }
+          : opts.code
+            ? { kind: 'code', code: opts.code }
+            : { kind: 'item', itemId: opts.keyItemId ?? 'key', held: true },
         lockedMessage: opts.lockedMessage ?? (opts.code ? 'A padlock. It wants a code.' : 'The door is locked. You need a key.'),
         consumeItem: false,
       },

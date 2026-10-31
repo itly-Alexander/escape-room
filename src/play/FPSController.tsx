@@ -108,6 +108,12 @@ export function FPSController({ level, locked }: { level: Level; locked: boolean
     camera.rotation.set(0, level.playerStart.rotationY, 0)
   }, [camera, level])
 
+  // Dev only: lets test scripts put the player somewhere.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    ;(window as unknown as { __teleport?: unknown }).__teleport = (x: number, z: number) => pos.current.set(x, EYE_HEIGHT, z)
+  }, [])
+
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => setKey(e.code, true)
     const onUp = (e: KeyboardEvent) => setKey(e.code, false)

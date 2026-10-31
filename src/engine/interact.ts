@@ -31,6 +31,12 @@ export function tryInteract(object: SceneObject, enteredCode?: string): Interact
         return { kind: 'locked', message, objectId: object.id }
       }
       if (lock.consumeItem) w.removeItem(needed)
+    } else if (lock.requires.kind === 'values') {
+      const { valueIds, equals } = lock.requires
+      if (!valueIds.every((id, i) => w.values[id] === equals[i])) {
+        sfx.play('locked')
+        return { kind: 'locked', message: lock.lockedMessage ?? "It won't open.", objectId: object.id }
+      }
     } else {
       if (enteredCode === undefined) {
         return {
@@ -108,6 +114,15 @@ function runBehavior(object: SceneObject) {
       sfx.play('win')
       return
     }
+    case 'cycle': {
+      const cur = w.values[b.valueId]
+      w.setValue(b.valueId, cur === undefined ? 0 : (cur + 1) % b.count)
+      sfx.play('place')
+      return
+    }
+    case 'crank':
+      // Turned by holding E: see InteractReticle.
+      return
     case 'hide':
       if (w.hide || (b.group && w.flags[`flip-${b.group}`])) return
       w.startHide(b)

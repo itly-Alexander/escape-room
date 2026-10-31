@@ -27,8 +27,11 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
   const { camera, scene } = useThree()
   const currentRef = useRef<ReticleTarget | null>(null)
   const [, force] = useState(0)
+  // E (or Space) held down: turns a wheel for as long as you keep at it.
+  const holding = useRef(false)
 
-  useFrame(() => {
+  useFrame((_, rawDt) => {
+    crank(currentRef.current, holding.current && enabled && !useWorld.getState().hide, Math.min(rawDt, 0.1))
     // Nothing to aim at while crawling in, hiding or crawling out.
     if (!enabled || useWorld.getState().hide) {
       if (currentRef.current) {
@@ -70,8 +73,15 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
   })
 
   useEffect(() => {
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code === 'KeyE' || e.code === 'Space') holding.current = false
+    }
+    const onBlur = () => (holding.current = false)
     const onKey = (e: KeyboardEvent) => {
       if (e.code !== 'KeyE' && e.code !== 'Space') return
+      holding.current = true
+      // Holding the key down is one press, not a stream of them.
+      if (e.repeat) return
       // While hiding, E crawls back out (and does nothing mid-crawl).
       const w = useWorld.getState()
       if (w.hide) {
@@ -99,10 +109,31 @@ export function InteractReticle({ level, enabled, onTargetChange, onCodeRequest 
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keyup', onUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onUp)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [enabled, onCodeRequest])
 
   return null
+}
+
+/** Turns the wheel in the reticle while E is held, until it's all the way round. */
+function crank(target: ReticleTarget | null, turning: boolean, dt: number) {
+  const b = target?.object.interact?.behavior
+  if (!turning || b?.type !== 'crank') return
+  const w = useWorld.getState()
+  const cur = w.values[b.valueId] ?? 0
+  if (cur >= 1) return
+  const next = Math.min(1, cur + dt / b.seconds)
+  w.setValue(b.valueId, next)
+  if (next >= 1) {
+    if (b.done) w.pushHud(b.done, 4000)
+    sfx.play('open')
+  }
 }
 
 /** The text of the selected inventory item, if it's something you can read. */
@@ -151,5 +182,9 @@ function promptFor(obj: SceneObject): string {
     }
     case 'setState':
       return b.prompt ?? (obj.interact?.lock ? 'Use' : 'Toggle')
+    case 'crank':
+      return b.prompt ?? 'Hold to turn'
+    case 'cycle':
+      return b.prompt ?? 'Turn'
   }
 }
