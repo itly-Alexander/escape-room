@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { PointerLockControls } from '@react-three/drei'
 import * as THREE from 'three'
+import { requestLock } from './pointerLock'
 import type { Level } from '@/schema/level'
 import { computeAABB, moveWithCollision, type AABB } from '@/engine/collision'
 import { playerMotion } from './playerMotion'
@@ -77,8 +77,8 @@ const v3 = (p: [number, number, number]) => new THREE.Vector3(p[0], p[1], p[2])
 type HideAnim = { phase: 'entering' | 'leaving'; t: number; from: THREE.Vector3; yaw0: number; pitch0: number }
 
 export function FPSController({ level, locked }: { level: Level; locked: boolean }) {
-  const { camera } = useThree()
-  const controlsRef = useRef<any>(null)
+  const { camera, gl } = useThree()
+  useMouseLook(camera, gl)
   const bobT = useRef(0)
   const pos = useRef(new THREE.Vector3())
   const tmpDir = useRef(new THREE.Vector3())
@@ -287,5 +287,38 @@ export function FPSController({ level, locked }: { level: Level; locked: boolean
     playerMotion.yaw = e.y
   })
 
-  return <PointerLockControls ref={controlsRef} />
+  return null
+}
+
+// Mouse look while the pointer is locked. Movements bigger than any real flick
+// are dropped: under pointer lock Chrome occasionally reports a bogus jump of
+// hundreds of pixels, which would snap the view round as if you'd teleported.
+const LOOK_SPEED = 0.002
+const MAX_MOUSE_STEP = 250
+
+function useMouseLook(camera: THREE.Camera, gl: { domElement: HTMLElement }) {
+  useEffect(() => {
+    const euler = new THREE.Euler(0, 0, 0, 'YXZ')
+    const onMove = (e: MouseEvent) => {
+      if (document.pointerLockElement !== gl.domElement) return
+      const dx = e.movementX || 0
+      const dy = e.movementY || 0
+      if (Math.abs(dx) > MAX_MOUSE_STEP || Math.abs(dy) > MAX_MOUSE_STEP) return
+      euler.setFromQuaternion(camera.quaternion)
+      euler.y -= dx * LOOK_SPEED
+      euler.x -= dy * LOOK_SPEED
+      euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x))
+      camera.quaternion.setFromEuler(euler)
+    }
+    // Clicking anywhere takes the mouse, as drei's PointerLockControls did.
+    const onClick = () => {
+      if (!document.pointerLockElement) requestLock(gl.domElement)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('click', onClick)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('click', onClick)
+    }
+  }, [camera, gl])
 }

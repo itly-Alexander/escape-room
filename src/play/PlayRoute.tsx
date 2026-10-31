@@ -8,6 +8,7 @@ import { useWorld } from '@/state/world'
 import { LevelLights } from '@/engine/Lights'
 import { SceneObjectView } from '@/engine/SceneObjectView'
 import { FPSController } from './FPSController'
+import { requestLock as requestPointerLockRaw } from './pointerLock'
 import { InteractReticle, type ReticleTarget } from './InteractReticle'
 import { PlayHUD } from './PlayHUD'
 import { HeldItem } from './HeldItem'
@@ -155,7 +156,7 @@ export function PlayRoute() {
 
   const requestLock = () => {
     const canvas = canvasHostRef.current?.querySelector('canvas')
-    canvas?.requestPointerLock?.()
+    requestPointerLockRaw(canvas)
   }
 
   // The padlock is keyboard-driven (WASD), so release the pointer lock while
