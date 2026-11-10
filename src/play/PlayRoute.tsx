@@ -122,7 +122,14 @@ export function PlayRoute() {
     if (!levelId) return
     const l = loadBundledLevel(levelId)
     if (!l) return
+    // Seals already set into the wall stay there: dying doesn't undo them.
+    const { flags } = useWorld.getState()
+    const placed = Object.keys(flags).filter((f) => flags[f] && /^seal-.+-placed$/.test(f))
     loadLevel(l)
+    for (const f of placed) {
+      useWorld.getState().markPickedUp(f.replace(/-placed$/, '')) // its pickup stays off the table
+      useWorld.getState().setFlag(f, true)
+    }
     ambientMusic.start('play')
     setAttempt((n) => n + 1) // remounts the scene, so the monster starts over
     setHasEverLocked(false)

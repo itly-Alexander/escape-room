@@ -16,6 +16,8 @@ export const HEARING_RANGE = 20
 /** Within this distance it's at full volume. */
 const FULL_VOLUME_RANGE = 3
 const MAX_GAIN = 0.2
+/** Volume multiplier while she isn't hunting. */
+const IDLE_GAIN = 0.12
 
 type AudioCtor = typeof AudioContext
 
@@ -183,11 +185,7 @@ const later = (fn: () => void, ms: number) => {
 
       type Kind = 'growl' | 'snarl' | 'bark' | 'rumble' | 'hiss' | 'burst' | 'scream' | 'screech' | 'wail' | 'breath'
       // Idle, she mostly just breathes: slow, deep, laboured, with the odd low rumble.
-      const KINDS: Array<[Kind, number]> = [
-        ['breath', 9],
-        ['rumble', 1.5],
-        ['growl', 0.5],
-      ]
+      const KINDS: Array<[Kind, number]> = [['breath', 1]]
       // While she's hunting you: screams, screeches and wails, with a snarl or bark thrown in.
       const CHASE_KINDS: Array<[Kind, number]> = [
         ['scream', 3],
@@ -333,7 +331,9 @@ const later = (fn: () => void, ms: number) => {
 
     const d = Math.hypot(source.x - listener.x, source.y - listener.y, source.z - listener.z)
     const closeness = 1 - Math.min(1, Math.max(0, (d - FULL_VOLUME_RANGE) / (HEARING_RANGE - FULL_VOLUME_RANGE)))
-    const volume = silenced ? 0 : MAX_GAIN * (1 + 0.5 * this.agitation) * closeness * closeness
+    // Idle, she's barely audible: just faint breathing when you're close.
+    const idleScale = this.agitation > 0.5 ? 1 : IDLE_GAIN
+    const volume = silenced ? 0 : MAX_GAIN * idleScale * (1 + 0.5 * this.agitation) * closeness * closeness
     level.gain.setTargetAtTime(volume, t, 0.08)
     // Duller with distance: air and walls eat the highs first.
     // (Wide open while she's screaming, so the highs aren't dulled away.)

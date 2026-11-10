@@ -20,6 +20,7 @@ export type ProceduralTextureName =
   | 'moss-b'
   | 'moss-c'
   | `chalk:${string}`
+  | `face:${string}`
 
 type Symbol4 = 'sun' | 'moon' | 'eye' | 'key'
 
@@ -47,6 +48,10 @@ function build(name: ProceduralTextureName): THREE.CanvasTexture {
   if (name.startsWith('chalk:')) {
     const [, numeral, digit] = name.split(':')
     return buildChalkSlate(numeral ?? '', digit ?? '')
+  }
+  if (name.startsWith('face:')) {
+    const [, emoji, num] = name.split(':')
+    return buildHeadshot(emoji ?? '', num ?? '')
   }
   switch (name) {
     case 'brick':
@@ -653,5 +658,30 @@ function buildChalkSlate(numeral: string, digit: string): THREE.CanvasTexture {
     }
   }
   ctx.putImageData(img, F, F)
+  return new THREE.CanvasTexture(canvas)
+}
+
+/** An 8x10 actor's headshot: a face on a grey backdrop, the white border numbered in biro. */
+function buildHeadshot(face: string, num: string): THREE.CanvasTexture {
+  const W = 256
+  const H = 320
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#efe7d3'
+  ctx.fillRect(0, 0, W, H)
+  const g = ctx.createRadialGradient(W / 2, 120, 20, W / 2, 140, 170)
+  g.addColorStop(0, '#9a958c')
+  g.addColorStop(1, '#4b4843')
+  ctx.fillStyle = g
+  ctx.fillRect(14, 14, W - 28, 238)
+  ctx.font = '150px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(face, W / 2, 128)
+  ctx.fillStyle = '#23201c'
+  ctx.font = 'italic 26px Georgia, serif'
+  ctx.fillText(`No. ${num}`, W / 2, 288)
   return new THREE.CanvasTexture(canvas)
 }

@@ -6,7 +6,6 @@ import { GrowlVoice } from './growl'
 import { computeAABB, type AABB } from './collision'
 import { canSee, DETECT_RANGE, DETECT_RANGE_CROUCHED, pursuit, segmentHitsBox } from './pursuit'
 import { playerMotion } from '@/play/playerMotion'
-import { sfx } from './ambient'
 import { useWorld } from '@/state/world'
 
 // A gaunt, pale, shirtless creature: wasted torso with ribs and collarbones,
@@ -924,24 +923,13 @@ export function Monster({ patrol, walkInPlace }: { patrol?: Patrol; walkInPlace?
             if (followRoute()) walkTo(ax, az, 0.1)
           }
           if (n.flipT > 0 || Math.hypot(ax - n.x, az - n.z) < 0.3) {
-            // At the table: face it, rear back, then heave it over.
+            // At the table: face it, bend down and reach in underneath.
             n.flipT += dt
             n.yaw += wrapAngle(Math.atan2(sp.deep[0] - n.x, sp.deep[2] - n.z) - n.yaw) * (1 - Math.exp(-dt * 8))
-            n.lunge = Math.sin(Math.min(1, n.flipT / 0.8) * Math.PI) * 0.45
-            if (n.flipT > 0.35 && !w.flags[`flip-${sp.group}`]) {
-              w.setFlag(`flip-${sp.group}`, true)
-              w.setHidePhase('leaving') // thrown out from under it
-              sfx.play('crash')
-            }
-            // Thrown out from under the table with her standing over them: that's it.
+            const bend = Math.min(1, n.flipT / 0.9)
+            n.lunge = (1 - Math.pow(1 - bend, 2)) * 1.0
+            // Her hands reach them under the table: that's it.
             if (n.flipT > 1.0) w.setCaught(true)
-            if (n.flipT > 1.3) {
-              n.mode = 'chase'
-              n.flipT = 0
-              n.lunge = 0
-              pursuit.lastSeen.x = camera.position.x
-              pursuit.lastSeen.z = camera.position.z
-            }
           }
         }
       } else if (n.mode === 'chase' && grid) {
@@ -1009,8 +997,10 @@ export function Monster({ patrol, walkInPlace }: { patrol?: Patrol; walkInPlace?
       const dx = tmp.x - HEAD_PIVOT[0]
       const dz = tmp.z - HEAD_PIVOT[2]
       const dy = HEAD_PIVOT[1] - tmp.y
-      const yawTarget = THREE.MathUtils.clamp(Math.atan2(dx, dz), -Math.PI / 2, Math.PI / 2)
-      const pitchTarget = THREE.MathUtils.clamp(Math.atan2(dy, Math.hypot(dx, dz)), 0.3, 0.75)
+      // Someone hiding under a table doesn't draw her gaze; she only looks once she's bent down to them.
+      const ignoring = !!useWorld.getState().hide && nav.current.flipT < 0.4
+      const yawTarget = ignoring ? 0 : THREE.MathUtils.clamp(Math.atan2(dx, dz), -Math.PI / 2, Math.PI / 2)
+      const pitchTarget = ignoring ? HEAD_TILT.x : THREE.MathUtils.clamp(Math.atan2(dy, Math.hypot(dx, dz)), 0.3, 0.75)
       // Does she see the player? Anyone in her front 180° with nothing in the way,
       // unless they're curled up out of sight under a table.
       {

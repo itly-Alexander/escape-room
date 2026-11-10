@@ -36,6 +36,8 @@ const Material = z.object({
     ])
     // Or a slate with a chalked numeral and digit: "chalk:<numeral>:<digit>".
     .or(z.custom<`chalk:${string}`>((v) => typeof v === 'string' && v.startsWith('chalk:')))
+    // Or a framed headshot: "face:<emoji>:<number>".
+    .or(z.custom<`face:${string}`>((v) => typeof v === 'string' && v.startsWith('face:')))
     .optional(),
 })
 
