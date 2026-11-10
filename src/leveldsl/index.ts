@@ -416,6 +416,21 @@ export class LevelBuilder {
     })
   }
 
+  /** A signal lamp that flashes `pattern` ('.' short, '-' long, ' ' letter gap, '/' word gap) forever. Faces +z turned by `rotationY`. */
+  blinker(opts: { id: string; at: Vec3; rotationY?: number; scale?: number; pattern: string; unit?: number; color?: string; interact?: Interact }) {
+    const s = opts.scale ?? 1
+    return this.object({
+      id: opts.id,
+      name: 'Lamp',
+      mesh: { kind: 'blinker', pattern: opts.pattern, unit: opts.unit ?? 0.4, color: opts.color ?? '#ffe9a0' },
+      transform: { position: opts.at, rotation: [0, opts.rotationY ?? 0, 0], scale: [s, s, s] },
+      isSolid: false,
+      castShadow: false,
+      receiveShadow: false,
+      interact: opts.interact,
+    })
+  }
+
   /**
    * A stub of a candle: wax, a tiny flame and a dim, flickering warm light.
    * `at` is the base of the candle (e.g. a tabletop). The light casts no

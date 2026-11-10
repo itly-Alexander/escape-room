@@ -16,7 +16,11 @@ export function tryInteract(object: SceneObject, enteredCode?: string): Interact
   const w = useWorld.getState()
   const lock = object.interact.lock
 
-  if (lock) {
+  // Something already opened with a code or a combination doesn't ask again.
+  const b0 = object.interact.behavior
+  const alreadyOpen = b0.type === 'setState' && w.flags[b0.stateId] === b0.value && (lock?.requires.kind === 'code' || lock?.requires.kind === 'values')
+
+  if (lock && !alreadyOpen) {
     if (lock.requires.kind === 'item') {
       const needed = lock.requires.itemId
       const hasIt = w.inventory.includes(needed)

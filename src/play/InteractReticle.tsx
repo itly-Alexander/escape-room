@@ -131,6 +131,8 @@ function crank(target: ReticleTarget | null, turning: boolean, dt: number) {
   const next = Math.min(1, cur + dt / b.seconds)
   w.setValue(b.valueId, next)
   if (next >= 1) {
+    // Anything that hangs on the wheel (a shutter, say) can wait for this flag.
+    w.setFlag(`${b.valueId}-done`, true)
     if (b.done) w.pushHud(b.done, 4000)
     sfx.play('open')
   }

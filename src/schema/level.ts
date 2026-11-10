@@ -121,7 +121,11 @@ const WheelMesh = z.object({ kind: z.literal('wheel'), valueId: z.string(), colo
 // first turned, and `label` on a little plate above.
 const DialMesh = z.object({ kind: z.literal('dial'), valueId: z.string(), colors: z.array(Color).min(1), label: z.string().default('') })
 
-const Mesh = z.discriminatedUnion('kind', [PrimitiveMesh, GltfMesh, FlameMesh, MonsterMesh, ClothMesh, LanternMesh, KeyMesh, PuddleMesh, DollMesh, BulbMesh, WheelMesh, DialMesh])
+// A signal lamp that flashes `pattern` forever (engine/Blinker.tsx): '.' a short
+// flash, '-' a long one, ' ' a gap between letters, '/' a longer gap between words.
+const BlinkerMesh = z.object({ kind: z.literal('blinker'), pattern: z.string(), unit: z.number().positive().default(0.4), color: Color.default('#ffe9a0') })
+
+const Mesh = z.discriminatedUnion('kind', [PrimitiveMesh, GltfMesh, FlameMesh, MonsterMesh, ClothMesh, LanternMesh, KeyMesh, PuddleMesh, DollMesh, BulbMesh, WheelMesh, DialMesh, BlinkerMesh])
 
 const Transform = z.object({
   position: Vec3.default([0, 0, 0]),
