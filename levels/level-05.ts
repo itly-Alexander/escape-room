@@ -614,13 +614,38 @@ function buildChandlerRoom(L: LevelBuilder) {
 
 // ---- Level ---------------------------------------------------------------------------------------------
 
+// The whole apartment is drawn at plan scale and then opened up: wider and deeper
+// (KXZ) and a little taller (KY), so there's room to walk between the furniture.
+const KXZ = 1.4;
+const KY = 1.1;
+
+function enlarge(L: LevelBuilder) {
+  const sc = (v: Vec3): Vec3 => [v[0] * KXZ, v[1] * KY, v[2] * KXZ];
+  for (const o of L.objects) {
+    o.transform.position = sc(o.transform.position);
+    if (o.mesh.kind === "primitive") o.mesh.size = sc(o.mesh.size);
+    if (o.pose) {
+      o.pose.open.position = sc(o.pose.open.position);
+      if (o.pose.spin) {
+        o.pose.spin.pivot = sc(o.pose.spin.pivot);
+        if (o.pose.spin.shift) o.pose.spin.shift = sc(o.pose.spin.shift);
+      }
+    }
+  }
+  for (const l of L.lights) {
+    l.position = sc(l.position);
+    if (l.distance) l.distance *= KXZ;
+    if (l.type === "point") l.intensity *= 1.3;
+  }
+}
+
 export default defineLevel({
   id: "level-05",
   name: "Level 05 — Apartment 19",
   tags: ["medium", "puzzle", "friends"],
   background: "#0a0e1a",
   // By the front door, looking in towards the couch.
-  playerStart: { position: [4.4, 1.7, 5.3], rotationY: 0.45 },
+  playerStart: { position: [4.4 * KXZ, 1.7, 5.3 * KXZ], rotationY: 0.45 },
   build(L) {
     L.ambient({ color: "#8a7a64", intensity: 0.85 });
     buildShell(L);
@@ -628,5 +653,6 @@ export default defineLevel({
     buildBathroom(L);
     buildJoeyRoom(L);
     buildChandlerRoom(L);
+    enlarge(L);
   },
 });
